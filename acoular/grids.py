@@ -23,6 +23,9 @@ Implement support for multidimensional grids and integration sectors.
     MultiSector
     Polygon
     in_hull
+    PGrid
+
+    create_rand_pgrid
 """
 
 # imports from other packages
@@ -1587,3 +1590,58 @@ class MultiSector(Sector):
             inds += sec.contains(pos)
 
         return inds.astype(bool)
+
+def create_rand_pgrid(B, n):
+    def check_bound(B, n):
+         if len(B) != 4 * n:
+             raise Exception('wrong size of bounds')
+         else:
+            return True
+    if check_bound(B, n):
+        pos = [
+            [B[4 * k][0] + (B[4 * k][1] - B[4 * k][
+                0]) * random.random() for
+             k in range(n)],
+            [B[4 * k + 1][0] + (
+                    B[4 * k + 1][1] - B[4 * k + 1][
+                0]) * random.random()
+             for k in range(n)],
+            [B[4 * k + 2][0] + (
+                    B[4 * k + 2][0] - B[4 * k + 2][
+                1]) * random.random()
+             for k in range(n)]]
+        return Pgrid(POS=pos)
+
+class Pgrid(Grid):
+    """
+    Provides a 3d Grid for the beamforming results, based on given points.
+    format for pos
+    POS = [[x_1,x_2,x_3,...],[y_1,y_2,y_3,...],[z_1,z_2,z_3,...]]
+    """
+    #: The points of the Grid.
+    POS = Any([[],[],[]],
+            desc="coordinates of Points")
+    
+    # internal identifiers
+    digest = Property(
+        depends_on = ['POS']
+        )
+    
+    @property_depends_on('POS')
+    def _get_size ( self ):
+        return size(self.POS)/3
+    
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
+
+    def pos(self):
+        """
+        Calculates grid co-ordinates.
+        
+        Returns
+        -------
+        array of floats of shape (3, :attr:`~Grid.size`)
+            The grid point x, y, z-coordinates in one array.
+        """
+        return self.POS
