@@ -24,7 +24,7 @@
     BeamformerGIB
     BeamformerAdaptiveGrid
     BeamformerGridlessOrth
-
+	BeamformerEA
     PointSpreadFunction
     L_p
     integrate
@@ -110,7 +110,7 @@ from .configuration import config
 from .deprecation import deprecated_alias
 from .environments import Environment
 from .fastFuncs import beamformerFreq, calcPointSpreadFunction, calcTransfer, damasSolverGaussSeidel
-from .grids import Grid, Sector
+from .grids import Grid, Sector, Pgrid
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
@@ -2555,3 +2555,464 @@ def integrate(data, grid, sector):
         for i in range(data.shape[0]):
             h[i] = data[i].reshape(gshape)[ind].sum()
     return h
+
+class BeamformerEA(BeamformerBase):
+    """
+    The locations of the sources are sought for by using a global
+    optimization method. In this way, estimates for source positions
+    and source strengths are obtained as a solution of the
+    optimization and do not need to be obtained from a delay-and-sum
+    beam former result.
+    Malgoezar et al. 2017
+    """
+
+    METHODS = DictStrAny(
+        #{'diff_evo': differential_evolution, 'PSO': pso},
+        {'diff_evo': differential_evolution},
+        desc="Methods Dictionary")
+
+    #: the type of the evolutionary algorithm which is used, default is
+    #: Differential Evolution
+
+    #method = Trait('diff_evo', 'PSO', desc="algorihtm method used")
+    method = Trait('diff_evo')
+
+    # Dictionary for Setting additional Keyword arguments of the
+    # solver for example set the population for differential evolution
+    # with kwargs['popsize'] = x
+    kwargs = DictStrAny({})
+
+    # the type of cost function which is used, default is
+    # ecsm
+
+    cost_function = Trait('ecsm', 'ecsm2', 'bartlett', 'funcbeam',
+                          desc="Cost Function used")
+    """the type of cost function which is used, default is ecsm"""
+
+    # sol is used for saving the best callcuated solution from each
+    # generation of solutions
+    sol = Any([],
+              desc="Solutions")
+
+    # val is used for saving the value of the cost function from the
+    # best solution of each generation
+    val = Any([],
+              desc="Value")
+
+    # internal identifier
+    digest = Property(
+        depends_on=['Sol,''mpos.digest', 'grid.digest',
+                    'freq_data.digest',
+                    'c', 'method', 'env.digest', 'steer',
+                    'r_diag'],
+    )
+
+    @cached_property
+    def _get_digest(self):
+        return digest(self)
+
+    # function to repack complex matrices to deal with them
+    # in real number space
+    @staticmethod
+    def real(m):
+        return vstack([m.real, m.imag])
+
+    def bartlett(self, x, n, i, vis=False):
+        """
+        Cost function defined as the bartlett Processor by
+        Malgozaret al. 2017. This function should be real- valued,
+        but because of numerical errors it yields complex values with
+        a very small imaginary part (E-18). The imaginary part is
+        neglected by taking just the real part of the argument. The
+        function gets maximum value at source locations instead of a
+        minimum. Its adjusted accordingly to become minimal at the
+        source locations. The bartlett Processor holds no information
+        about the source strengths and therefore can be just used to
+        calculate source position and not the source strengths
+
+        Bartlett Processor from Malgozaret al. 2017:
+
+        .. math::
+             E_{Bartlett} =\\frac{y^H \\cdot C_{meas} \\cdot y}
+             { {\|y \|}^2  tr(C_{mes})}
+
+
+        Adjusted Processor:
+
+        .. math::
+             E_{Bartlett} =1 - \\Re{\\frac{y^H \\cdot C_{meas} \\cdot y}
+             { {\|y \|}^2  tr(C_{mes})}}
+
+        :param x: array of floats
+                  This array of dimension ([number of grid points] x 4)
+                  is used to give the function the coordinates of
+                  each source and source strength
+
+        :param n: int
+                  The number of sources [number of sources]
+        :param i: int
+                  index of frequencie
+        :return: int  the value of the E_bartlett processor
+        """
+        if len(x) != 4 * n:
+            print("error x in wrong shape")
+            return ''
+        self.sol = concatenate([self.sol, x])
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
+                       (n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        pg = Pgrid(POS=p)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
+                                 mpos=self.mpos, env=self.env)
+        csm = array(self.freq_data.csm[i], dtype='complex128')
+        kj = 2j * pi * self.freq_data.fftfreq() / self.c
+        kji = kj[i, newaxis]
+        hh = transfer(bbcmf.r0, bbcmf.rm, kji)
+        h = hh[0].T
+        y = dot(h, p0)
+        yh = conjugate(y).T
+
+        result = 1 - real(dot(dot(yh, csm), y) / (
+                square(linalg.norm(y)) * trace(csm)))
+
+        self.val = concatenate([self.val, [result]])
+        if vis:
+            print(result)
+        return result
+
+    def ecsm(self, x, n, i, vis=False):
+        """
+        Cost function defined as differences of the measured CSM and
+        the modeled CSM by Malgozaret al. 2017. This function defines
+        the matrix fitting problem. The definition is applied for
+        each element in the matrices.
+
+        .. math::
+                E_{csm} =  \\sum{[\\Re(C_{meas})-\\Re(C_{model}]^2 +
+                [\\Im(C_{meas}) - \\Im(C_{model})]^2}
+
+
+        :param x: array of floats
+                This array of dimension ([number of gridpoint]x 3
+                + [number of gridpoint]) is used to give the function
+                the coordinates of each source and source strength
+        :param n: int
+                The number of sources [number of sources]
+        :param i: int
+                index of frequencie
+        :param vis: boolean flag for verbose output
+        :return: int The value of the E_CSM energy function
+        """
+        if len(x) != 4 * n:
+            print("error x in wrong shape")
+            return ''
+        self.sol = concatenate([self.sol, x])
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
+                       (n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        pg = Pgrid(POS=p)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
+                                 mpos=self.mpos, env=self.env)
+        bbcmf.cached = False
+        kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
+        nc = bbcmf.freq_data.numchannels
+        r0 = bbcmf.r0
+        rm = bbcmf.rm
+        numpoints = rm.shape[0]
+        csm = array(bbcmf.freq_data.csm[i], dtype='complex128')
+
+        kji = kj[i, newaxis]
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        hh = sv.transfer(self.freq_data.fftfreq()[i])
+        hh = hh.reshape((1,2,64))
+
+        h = hh[0].T
+
+        bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]) \
+            .transpose(2, 0, 1)
+        ac = bc.reshape(nc * nc, numpoints)
+
+        a = self.real(ac)
+        r = self.real(reshape(csm.T, (nc * nc, 1)))
+        result = square(linalg.norm(dot(a, p0) - r[:, 0]))
+        self.val = concatenate([self.val, [result]])
+        if vis:
+            print(result)
+        return result
+
+    def funcbeam(self, x, n, i):
+        """
+        Cost function defined through functional beamforming after
+        Dougherty:
+
+        M mutally incoherent sources with strengths d_j ,  j = 1,..,N
+        and M number of channels.
+        The array cross spectral matrix (CSM) C is given by
+
+        .. math::
+                C = \\sum_{j=1}^{N} {d_j g_j g_j^H}\n
+                C \in \mathbb{C}^{m,m}
+
+        Where g_j is the array steering vector for source j.
+        With eigenvalue decomposition we write C as:
+
+        .. math::
+            C =  U  \\Sigma  U^H
+
+        We define
+
+        .. math::
+            C^{1/\\nu} = U \\Sigma^{1/\\nu} U^H
+
+
+                b_v(g) = [g^T C^{1/v} g]^v \n
+                E_{fun} = 1 - \\Re(b_v(g))
+
+        :param x: array of floats
+                  This array of dimension ([number of grid points] x 4)
+                  is used to give the function the coordinates of each
+                   source and source strength
+        :param n: int
+                  The number of sources [number of sources]
+        :param i: int
+                  index of frequency
+        :return:  int The value of the E_fun cost function
+        """
+        nu = 20
+        if len(x) != 4 * n:
+            print("error x in wrong shape")
+            return ''
+        self.sol = concatenate([self.sol, x])
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)] \
+                       , (n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        pg = Pgrid(POS=p)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg \
+                                 , mpos=self.mpos, env=self.env)
+        csm = array(self.freq_data.csm[i], dtype='complex128')
+        s, u = linalg.eig(csm)
+        kj = 2j * pi * self.freq_data.fftfreq() / self.c
+        kji = kj[i, newaxis]
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        hh = sv.transfer(self.freq_data.fftfreq()[i])
+        hh = hh.reshape((1,2,64))
+        h = hh[0].T
+        y = dot(h, p0)
+        yh = conjugate(y).T
+
+        c_v = dot(u, dot(power(diag(s), 1 / nu) \
+                               , conjugate(u.T)))
+        bg = power(dot(yh, dot(c_v, y)) / \
+                      (square(linalg.norm(y)) * trace(csm)),
+                      nu)
+        result = real(1 - bg)
+        print(result)
+        return result
+
+
+
+    def ecsm2(self, x, n, i, vis=False):
+        """
+        Cost function defined as differences of the measured CSM and
+        the modeled CSM by Malgozaret al. 2017. This function defines
+        the matrix fitting problem. This implementation also removes
+        the main diagonal of the CSM.
+
+        .. math::
+                E_{csm} =  \\sum{[\\Re(C_{meas})-\\Re(C_{model}]^2 +
+                [\\Im(C_{meas}) - \\Im(C_{model})]^2}
+
+
+        :param x: array of floats
+                This array of dimension ([number of gridpoint]x 3
+                + [number of gridpoint]) is used to give the function
+                the coordinates of each source and source strength
+        :param n: int
+                The number of sources [number of sources]
+        :param i: int
+                index of frequencie
+        :param vis: boolean flag for verbose output
+        :return: int The value of the E_CSM2 energy function
+        """
+        if (len(x) != 4 * n):
+            print("error x in wrong shape")
+            return ''
+        self.sol = concatenate([self.sol, x])
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
+                       (n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        pg = Pgrid(POS=p)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
+                                 mpos=self.mpos, env=self.env)
+
+        kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
+        nc = bbcmf.freq_data.numchannels
+        r0 = bbcmf.r0
+        rm = bbcmf.rm
+        numpoints = rm.shape[0]
+        hh = zeros((1, numpoints, nc), dtype='D')
+
+        csm = array(bbcmf.freq_data.csm[i], dtype='complex128',
+                    copy=1)
+
+        kji = kj[i, newaxis]
+
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        hh = sv.transfer(self.freq_data.fftfreq()[i])
+        hh = hh.reshape((1,2,64))
+        h = hh[0].T
+        # reduced Kronecker product (only where solution matrix != 0)
+        Bc = (h[:, :, newaxis] * \
+              h.conjugate().T[newaxis, :, :]) \
+            .transpose(2, 0, 1)
+        Ac = Bc.reshape(nc * nc, numpoints)
+
+        # get indices for upper triangular matrices
+        # (use tril b/c transposed)
+        ind = reshape(tril(ones((nc, nc))), (nc * nc,)) > 0
+
+        ind_im0 = (reshape(eye(nc), (nc * nc,)) == 0)[ind]
+        # Diagonale war schon entfernt
+        if bbcmf.r_diag:
+            # omit main diagonal for noise reduction
+            ind_reim = hstack([ind_im0, ind_im0])
+        else:
+            # take all real parts -- also main diagonal
+            ind_reim = hstack(
+                [ones(size(ind_im0), ) > 0, ind_im0])
+            ind_reim[0] = True
+        A = self.real(Ac[ind, :])[ind_reim, :]
+        #    print(np.shape(A))
+        R = self.real(reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim,
+            :]
+        #    print(np.shape(R))
+        result = square(linalg.norm(dot(A, p0) - R[:, 0]))
+        self.val = concatenate([self.val, [result]])
+        if vis:
+            print(result)
+        return result
+
+    def metho(self):
+        """
+        Helper for returning method
+
+        :return: callable the chosen solving approach either
+        Differential Evolution of Particle Swarm Optimalization
+        """
+        #methods = {'diff_evo': differential_evolution, 'PSO': pso}
+        methods = {'diff_evo': differential_evolution}
+        return methods.get(self.method)
+
+    def costfunc(self):
+        """
+        Helper for returning cost function
+        :return: callable the bound chosen cost function
+        """
+        costfunction = {'ecsm': self.ecsm, 'ecsm2': self.ecsm2,
+                        'bartlett': self.bartlett,
+                        'funcbeam': self.funcbeam}
+        return costfunction.get(self.cost_function)
+
+    def bound(self, b, n, i, vis=False):
+        """
+        Helper function for arranging of parameters for
+        the different solvers
+
+        :param b: array of tuples
+        :param n: number of points
+        :param i: index for frequency
+        :return: PSO: lb array, ub array
+                 diff_evo: b sequence, (n,i) tuple of int
+        """
+        #if self.method == 'PSO':
+        #    lb = [b[k][0] for k in range(4 * n)]
+        #    ub = [b[k][1] for k in range(4 * n)]
+        #    return lb, ub, [], None, (n, i, vis)
+        if self.method == 'diff_evo':
+            return b, (n, i, vis)
+
+    def calculate(self, b, f, vis=False):
+        """
+        The main method which calculates the source positions and
+        source strengths using the chosen method and cost function
+
+        :param b: array of tuples
+                This array of dimension ([number of grid points] x 4)
+                gives the function boundaries for the source positions
+                and source strengths, the boundaries for each source
+                coordinate and source strength are stored in tuples
+                of float
+                [(x_s1l, x_s1r),(y_s1l, y_s1r),(z_s1l, z_s1r),(d1l, d1r), ...]
+                where l means lower  and r upper boundary
+                len(b)/4 defines the number of sources which are used
+                to model the acoustic field
+        :param f: float
+                the frequency
+        :return: array of floats
+                This array of dimension ([len(b)]) returns the
+                coordinates x_si, y_si, z_si and source strengths di
+                of each source. They are arranged in one array in such
+                order :
+
+                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
+        """
+        self.sol = []
+        self.val = []
+        n = int(len(b) / 4)
+        if len(b) != 4 * n:
+            print("Error wrong bounds Size of num. of Sources")
+            return ""
+        if f not in self.freq_data.fftfreq():
+            print("Error wrong frequency")
+            return ""
+        else:
+            i = where(f == self.freq_data.fftfreq())[0][0]
+            res = self.METHODS.get(self.method)(self.costfunc(),
+                                                *self.bound(b, n, i,
+                                                            vis),
+                                                **self.kwargs)
+
+            self.sol = reshape(self.sol,
+                                  (int(len(self.sol) / (4 * n)),
+                                   4 * n)).T
+        return res
+
+    def calculate_third(self, b, f, vis=False):
+        """
+        Function which calculates the source position and source
+        strengths of third octave bands using the chosen method and
+        cost function. The result is the superposition of all narrowband
+        frequencies results contained in the third octave band
+        :param b: array of tuples
+                This array of dimension ([number of grid points] x 4)
+                gives the function boundaries for the source positions
+                and source strengths, the boundaries for each source
+                coordinate and source strength are stored in tuples
+                of float
+                [(x_s1l, x_s1r),(y_s1l, y_s1r),(z_s1l, z_s1r),(d1l, d1r), ...]
+                where l means lower  and r upper boundary
+        :param f: float
+                the center frequency of the third octave band
+        :param vis: boolean plotting the cost function value in console
+        :return: array of floats
+                This array of dimension ([len(b)] x [ind2 - ind1])
+                returns the coordinates x_si, y_si, z_si and source
+                strengths di of each source. They are arranged in one
+                array in such order :
+
+                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ...]_ind1,
+                ...,
+                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ...]_ind2
+        """
+        res = []
+        # calculate upper and lower frequencie
+        f1 = f * 2. ** (-0.5 / 3)
+        f2 = f * 2. ** (+0.5 / 3)
+        ind1 = searchsorted(self.freq_data.fftfreq(), f1)
+        ind2 = searchsorted(self.freq_data.fftfreq(), f2)
+
+        for k in range(int(ind1), int(ind2)):
+            fi = self.freq_data.fftfreq()[k]
+            hres = self.calculate(b, fi, vis)
+            res.append(hres.x)
+        return array(res)
