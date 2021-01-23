@@ -2652,8 +2652,8 @@ class BeamformerEA(BeamformerBase):
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
         pg = Pgrid(POS=p)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
-                                 mpos=self.mpos, env=self.env)
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         kj = 2j * pi * self.freq_data.fftfreq() / self.c
         kji = kj[i, newaxis]
@@ -2701,8 +2701,8 @@ class BeamformerEA(BeamformerBase):
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
         pg = Pgrid(POS=p)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
-                                 mpos=self.mpos, env=self.env)
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         bbcmf.cached = False
         kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
         nc = bbcmf.freq_data.numchannels
@@ -2712,7 +2712,6 @@ class BeamformerEA(BeamformerBase):
         csm = array(bbcmf.freq_data.csm[i], dtype='complex128')
 
         kji = kj[i, newaxis]
-        sv = SteeringVector(grid=pg, mics=self.mpos)
         hh = sv.transfer(self.freq_data.fftfreq()[i])
         #hh = hh.reshape((1,2,64))
         hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
@@ -2778,13 +2777,12 @@ class BeamformerEA(BeamformerBase):
                        , (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
         pg = Pgrid(POS=p)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg \
-                                 , mpos=self.mpos, env=self.env)
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         s, u = linalg.eig(csm)
         kj = 2j * pi * self.freq_data.fftfreq() / self.c
         kji = kj[i, newaxis]
-        sv = SteeringVector(grid=pg, mics=self.mpos)
         hh = sv.transfer(self.freq_data.fftfreq()[i])
         hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
         h = hh[0].T
@@ -2833,8 +2831,8 @@ class BeamformerEA(BeamformerBase):
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
         pg = Pgrid(POS=p)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, grid=pg,
-                                 mpos=self.mpos, env=self.env)
+        sv = SteeringVector(grid=pg, mics=self.mpos)
+        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
 
         kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
         nc = bbcmf.freq_data.numchannels
@@ -2848,7 +2846,6 @@ class BeamformerEA(BeamformerBase):
 
         kji = kj[i, newaxis]
 
-        sv = SteeringVector(grid=pg, mics=self.mpos)
         hh = sv.transfer(self.freq_data.fftfreq()[i])
         #hh = hh.reshape((1,2,64))
         hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
