@@ -2934,7 +2934,7 @@ class BeamformerEA(BeamformerBase):
         """
         The main method which calculates the source positions and
         source strengths using the chosen method and cost function
-        in a narrowband.
+        in a narrow band.
         For now just differential evolution can be chosen as method.
 
         :param b: array of tuples
@@ -2948,7 +2948,7 @@ class BeamformerEA(BeamformerBase):
                 len(b)/4 defines the number of sources which are used
                 to model the acoustic field
         :param f: float
-                The frequency of the narrowband.
+                The frequency of the narrow band.
         :param vis: bool
                 Set this to true for print output.
         :return: scipy.optimize.OptimizeResult
@@ -2986,7 +2986,7 @@ class BeamformerEA(BeamformerBase):
         """
         Function which calculates the source position and source
         strengths of third octave bands using the chosen method and
-        cost function. The result is the superposition of all narrowband
+        cost function. The result is the superposition of all narrow band
         frequencies results contained in the third octave band
         :param b: array of tuples
                 This array of dimension ([number of grid points] x 4)
