@@ -2934,6 +2934,7 @@ class BeamformerEA(BeamformerBase):
         """
         The main method which calculates the source positions and
         source strengths using the chosen method and cost function
+        For now just differential evolution can be chosen as method.
 
         :param b: array of tuples
                 This array of dimension ([number of grid points] x 4)
@@ -2947,8 +2948,10 @@ class BeamformerEA(BeamformerBase):
                 to model the acoustic field
         :param f: float
                 the frequency
-        :return: array of floats
-                This array of dimension ([len(b)]) returns the
+        :return: scipy.optimize.optimize.OptimizeResult
+                The resulting source positions and source strengths are returned in
+                the numpy.ndarray x of the result.
+                This array of dimension ([len(b)]) contains the
                 coordinates x_si, y_si, z_si and source strengths di
                 of each source. They are arranged in one array in such
                 order :
