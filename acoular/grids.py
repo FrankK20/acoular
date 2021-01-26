@@ -22,7 +22,6 @@
     MultiSector
     PointGrid
 
-
 """
 
 # imports from other packages
