@@ -2659,7 +2659,7 @@ class BeamformerEA(BeamformerBase):
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = Pgrid(POS=p)
+        pg = PointGrid(POS=p)
         sv = SteeringVector(grid=pg, mics=self.mpos)
         bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         csm = array(self.freq_data.csm[i], dtype='complex128')
@@ -2708,7 +2708,7 @@ class BeamformerEA(BeamformerBase):
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = Pgrid(POS=p)
+        pg = PointGrid(POS=p)
         sv = SteeringVector(grid=pg, mics=self.mpos)
         bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         bbcmf.cached = False
@@ -2784,7 +2784,7 @@ class BeamformerEA(BeamformerBase):
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)] \
                        , (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = Pgrid(POS=p)
+        pg = PointGrid(POS=p)
         sv = SteeringVector(grid=pg, mics=self.mpos)
         bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
         csm = array(self.freq_data.csm[i], dtype='complex128')
@@ -2838,7 +2838,7 @@ class BeamformerEA(BeamformerBase):
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
                        (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = Pgrid(POS=p)
+        pg = PointGrid(POS=p)
         sv = SteeringVector(grid=pg, mics=self.mpos)
         bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
 
