@@ -2934,6 +2934,7 @@ class BeamformerEA(BeamformerBase):
         """
         The main method which calculates the source positions and
         source strengths using the chosen method and cost function
+        in a narrowband.
         For now just differential evolution can be chosen as method.
 
         :param b: array of tuples
@@ -2947,7 +2948,9 @@ class BeamformerEA(BeamformerBase):
                 len(b)/4 defines the number of sources which are used
                 to model the acoustic field
         :param f: float
-                the frequency
+                The frequency of the narrowband.
+        :param vis: bool
+                Set this to true for print output.
         :return: scipy.optimize.optimize.OptimizeResult
                 The resulting source positions and source strengths are returned in
                 the numpy.ndarray x of the result.
