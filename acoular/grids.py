@@ -23,9 +23,7 @@ Implement support for multidimensional grids and integration sectors.
     MultiSector
     Polygon
     in_hull
-    PGrid
-
-    create_rand_pgrid
+    PointGrid
 """
 
 # imports from other packages
@@ -1590,27 +1588,6 @@ class MultiSector(Sector):
             inds += sec.contains(pos)
 
         return inds.astype(bool)
-
-def create_rand_pgrid(B, n):
-    def check_bound(B, n):
-         if len(B) != 4 * n:
-             raise Exception('wrong size of bounds')
-         else:
-            return True
-    if check_bound(B, n):
-        pos = [
-            [B[4 * k][0] + (B[4 * k][1] - B[4 * k][
-                0]) * random.random() for
-             k in range(n)],
-            [B[4 * k + 1][0] + (
-                    B[4 * k + 1][1] - B[4 * k + 1][
-                0]) * random.random()
-             for k in range(n)],
-            [B[4 * k + 2][0] + (
-                    B[4 * k + 2][0] - B[4 * k + 2][
-                1]) * random.random()
-             for k in range(n)]]
-        return PointGrid(POS=pos)
 
 class PointGrid(Grid):
     """
