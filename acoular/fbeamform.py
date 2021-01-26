@@ -2951,7 +2951,7 @@ class BeamformerEA(BeamformerBase):
                 The frequency of the narrowband.
         :param vis: bool
                 Set this to true for print output.
-        :return: scipy.optimize.optimize.OptimizeResult
+        :return: scipy.optimize.OptimizeResult
                 The resulting source positions and source strengths are returned in
                 the numpy.ndarray x of the result.
                 This array of dimension ([len(b)]) contains the
