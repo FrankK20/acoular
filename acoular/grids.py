@@ -1610,9 +1610,9 @@ def create_rand_pgrid(B, n):
                     B[4 * k + 2][0] - B[4 * k + 2][
                 1]) * random.random()
              for k in range(n)]]
-        return Pgrid(POS=pos)
+        return PointGrid(POS=pos)
 
-class Pgrid(Grid):
+class PointGrid(Grid):
     """
     Provides a 3d Grid for the beamforming results, based on given points.
     format for pos
