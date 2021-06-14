@@ -2724,7 +2724,7 @@ class BeamformerEA(BeamformerBase):
         kji = kj[i, newaxis]
         hh = sv.transfer(self.freq_data.fftfreq()[i])
         #hh = hh.reshape((1,2,64))
-        hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
+        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
 
         h = hh[0].T
 
@@ -2789,12 +2789,14 @@ class BeamformerEA(BeamformerBase):
         pg = PointGrid(POS=p)
         sv = SteeringVector(grid=pg, mics=self.mpos)
         bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
+        rm = bbcmf.rm
+        numpoints = rm.shape[0]
         csm = array(self.freq_data.csm[i], dtype='complex128')
         s, u = linalg.eig(csm)
         kj = 2j * pi * self.freq_data.fftfreq() / self.c
         kji = kj[i, newaxis]
         hh = sv.transfer(self.freq_data.fftfreq()[i])
-        hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
+        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
         h = hh[0].T
         y = dot(h, p0)
         yh = conjugate(y).T
@@ -2857,8 +2859,7 @@ class BeamformerEA(BeamformerBase):
         kji = kj[i, newaxis]
 
         hh = sv.transfer(self.freq_data.fftfreq()[i])
-        #hh = hh.reshape((1,2,64))
-        hh = hh.reshape((1,1,self.mpos.mpos.shape[1]))
+        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
         h = hh[0].T
         # reduced Kronecker product (only where solution matrix != 0)
         Bc = (h[:, :, newaxis] * \
