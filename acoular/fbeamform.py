@@ -2617,6 +2617,38 @@ class BeamformerEA(BeamformerBase):
     def real(m):
         return vstack([m.real, m.imag])
 
+    def prepare_parameters(self, x, n, i):
+        """
+        Prepares the parameters for the cost functions. This includes the
+        calculation of the steering vector, the cross spectral matrix (CSM),
+        and the source strengths.
+
+        :param x: array of floats
+                  This array of dimension ([number of grid points] x 4)
+                  is used to give the function the coordinates of each
+                  source and source strength
+        :param n: int
+                  The number of sources [number of sources]
+        :param i: int
+                  index of frequency
+        :return: tuple
+                 Returns a tuple containing the steering vector (h),
+                 the source strengths at the grid points (y), the source
+                 strengths (p0), and the cross spectral matrix (csm)
+        """
+        if len(x) != 4 * n:
+            raise ValueError("Error: x in wrong shape")
+        self.sol = concatenate([self.sol, x])
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)], (n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        self.steer.grid = PointGrid(POS=p)
+        csm = array(self.freq_data.csm[i], dtype='complex128')
+        hh = self.steer.transfer(self.freq_data.fftfreq()[i])
+        hh = hh.reshape((1, self.rm.shape[0], self.mpos.mpos.shape[1]))
+        h = hh[0].T
+        y = dot(h, p0)
+        return h, y, p0, csm
+
     def bartlett(self, x, n, i, vis=False):
         """
         Cost function defined as the bartlett Processor by
@@ -2654,27 +2686,10 @@ class BeamformerEA(BeamformerBase):
                   index of frequencie
         :return: int  the value of the E_bartlett processor
         """
-        if len(x) != 4 * n:
-            print("error x in wrong shape")
-            return ''
-        self.sol = concatenate([self.sol, x])
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
-                       (n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = PointGrid(POS=p)
-        sv = SteeringVector(grid=pg, mics=self.mpos)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
-        csm = array(self.freq_data.csm[i], dtype='complex128')
-        kj = 2j * pi * self.freq_data.fftfreq() / self.c
-        kji = kj[i, newaxis]
-        hh = transfer(bbcmf.r0, bbcmf.rm, kji)
-        h = hh[0].T
-        y = dot(h, p0)
+        _, y, _, csm = self.prepare_parameters(x, n, i)
         yh = conjugate(y).T
-
         result = 1 - real(dot(dot(yh, csm), y) / (
                 square(linalg.norm(y)) * trace(csm)))
-
         self.val = concatenate([self.val, [result]])
         if vis:
             print(result)
@@ -2703,35 +2718,10 @@ class BeamformerEA(BeamformerBase):
         :param vis: boolean flag for verbose output
         :return: int The value of the E_CSM energy function
         """
-        if len(x) != 4 * n:
-            print("error x in wrong shape")
-            return ''
-        self.sol = concatenate([self.sol, x])
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
-                       (n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = PointGrid(POS=p)
-        sv = SteeringVector(grid=pg, mics=self.mpos)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
-        bbcmf.cached = False
-        kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
-        nc = bbcmf.freq_data.numchannels
-        r0 = bbcmf.r0
-        rm = bbcmf.rm
-        numpoints = rm.shape[0]
-        csm = array(bbcmf.freq_data.csm[i], dtype='complex128')
-
-        kji = kj[i, newaxis]
-        hh = sv.transfer(self.freq_data.fftfreq()[i])
-        #hh = hh.reshape((1,2,64))
-        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
-
-        h = hh[0].T
-
-        bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]) \
-            .transpose(2, 0, 1)
-        ac = bc.reshape(nc * nc, numpoints)
-
+        h, _, p0, csm = self.prepare_parameters(x, n, i)
+        nc = self.freq_data.numchannels
+        bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]).transpose(2, 0, 1)
+        ac = bc.reshape(nc * nc, self.rm.shape[0])
         a = self.real(ac)
         r = self.real(reshape(csm.T, (nc * nc, 1)))
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
@@ -2740,7 +2730,7 @@ class BeamformerEA(BeamformerBase):
             print(result)
         return result
 
-    def funcbeam(self, x, n, i):
+    def funcbeam(self, x, n, i, vis=False):
         """
         Cost function defined through functional beamforming after
         Dougherty:
@@ -2779,35 +2769,18 @@ class BeamformerEA(BeamformerBase):
         :return:  int The value of the E_fun cost function
         """
         nu = 20
-        if len(x) != 4 * n:
-            print("error x in wrong shape")
-            return ''
-        self.sol = concatenate([self.sol, x])
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)] \
-                       , (n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = PointGrid(POS=p)
-        sv = SteeringVector(grid=pg, mics=self.mpos)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
-        rm = bbcmf.rm
-        numpoints = rm.shape[0]
-        csm = array(self.freq_data.csm[i], dtype='complex128')
+        _, y, _, csm = self.prepare_parameters(x, n, i)
         s, u = linalg.eig(csm)
-        kj = 2j * pi * self.freq_data.fftfreq() / self.c
-        kji = kj[i, newaxis]
-        hh = sv.transfer(self.freq_data.fftfreq()[i])
-        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
-        h = hh[0].T
-        y = dot(h, p0)
         yh = conjugate(y).T
-
         c_v = dot(u, dot(power(diag(s), 1 / nu) \
                                , conjugate(u.T)))
         bg = power(dot(yh, dot(c_v, y)) / \
                       (square(linalg.norm(y)) * trace(csm)),
                       nu)
         result = real(1 - bg)
-        print(result)
+        self.val = concatenate([self.val, [result]])
+        if vis:
+            print(result)
         return result
 
 
@@ -2835,45 +2808,15 @@ class BeamformerEA(BeamformerBase):
         :param vis: boolean flag for verbose output
         :return: int The value of the E_CSM2 energy function
         """
-        if (len(x) != 4 * n):
-            print("error x in wrong shape")
-            return ''
-        self.sol = concatenate([self.sol, x])
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)],
-                       (n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
-        pg = PointGrid(POS=p)
-        sv = SteeringVector(grid=pg, mics=self.mpos)
-        bbcmf = BeamformerEA(freq_data=self.freq_data, steer=sv)
-
-        kj = 2j * pi * bbcmf.freq_data.fftfreq() / bbcmf.c
-        nc = bbcmf.freq_data.numchannels
-        r0 = bbcmf.r0
-        rm = bbcmf.rm
-        numpoints = rm.shape[0]
-        hh = zeros((1, numpoints, nc), dtype='D')
-
-        csm = array(bbcmf.freq_data.csm[i], dtype='complex128',
-                    copy=1)
-
-        kji = kj[i, newaxis]
-
-        hh = sv.transfer(self.freq_data.fftfreq()[i])
-        hh = hh.reshape((1,numpoints,self.mpos.mpos.shape[1]))
-        h = hh[0].T
-        # reduced Kronecker product (only where solution matrix != 0)
-        Bc = (h[:, :, newaxis] * \
-              h.conjugate().T[newaxis, :, :]) \
-            .transpose(2, 0, 1)
-        Ac = Bc.reshape(nc * nc, numpoints)
-
+        h, _, p0, csm = self.prepare_parameters(x, n, i)
+        nc = self.freq_data.numchannels
+        bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]).transpose(2, 0, 1)
+        ac = bc.reshape(nc * nc, self.rm.shape[0])
         # get indices for upper triangular matrices
-        # (use tril b/c transposed)
         ind = reshape(tril(ones((nc, nc))), (nc * nc,)) > 0
-
         ind_im0 = (reshape(eye(nc), (nc * nc,)) == 0)[ind]
-        # Diagonale war schon entfernt
-        if bbcmf.r_diag:
+        # if diagonal is removed
+        if self.r_diag:
             # omit main diagonal for noise reduction
             ind_reim = hstack([ind_im0, ind_im0])
         else:
@@ -2881,11 +2824,9 @@ class BeamformerEA(BeamformerBase):
             ind_reim = hstack(
                 [ones(size(ind_im0), ) > 0, ind_im0])
             ind_reim[0] = True
-        A = self.real(Ac[ind, :])[ind_reim, :]
-        #    print(np.shape(A))
+        A = self.real(ac[ind, :])[ind_reim, :]
         R = self.real(reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim,
             :]
-        #    print(np.shape(R))
         result = square(linalg.norm(dot(A, p0) - R[:, 0]))
         self.val = concatenate([self.val, [result]])
         if vis:
