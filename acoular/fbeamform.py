@@ -2589,16 +2589,6 @@ class BeamformerEA(BeamformerBase):
                           desc="Cost Function used")
     """the type of cost function which is used, default is ecsm"""
 
-    # sol is used for saving the best callcuated solution from each
-    # generation of solutions
-    sol = Any([],
-              desc="Solutions")
-
-    # val is used for saving the value of the cost function from the
-    # best solution of each generation
-    val = Any([],
-              desc="Value")
-
     # internal identifier
     digest = Property(
         depends_on=['Sol,''mpos.digest', 'grid.digest',
@@ -2638,7 +2628,6 @@ class BeamformerEA(BeamformerBase):
         """
         if len(x) != 4 * n:
             raise ValueError("Error: x in wrong shape")
-        self.sol = concatenate([self.sol, x])
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)], (n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(n)]
         self.steer.grid = PointGrid(POS=p)
@@ -2649,7 +2638,7 @@ class BeamformerEA(BeamformerBase):
         y = dot(h, p0)
         return h, y, p0, csm
 
-    def bartlett(self, x, n, i, vis=False):
+    def bartlett(self, x, n, i):
         """
         Cost function defined as the bartlett Processor by
         Malgozaret al. 2017. This function should be real- valued,
@@ -2690,12 +2679,9 @@ class BeamformerEA(BeamformerBase):
         yh = conjugate(y).T
         result = 1 - real(dot(dot(yh, csm), y) / (
                 square(linalg.norm(y)) * trace(csm)))
-        self.val = concatenate([self.val, [result]])
-        if vis:
-            print(result)
         return result
 
-    def ecsm(self, x, n, i, vis=False):
+    def ecsm(self, x, n, i):
         """
         Cost function defined as differences of the measured CSM and
         the modeled CSM by Malgozaret al. 2017. This function defines
@@ -2715,7 +2701,6 @@ class BeamformerEA(BeamformerBase):
                 The number of sources [number of sources]
         :param i: int
                 index of frequencie
-        :param vis: boolean flag for verbose output
         :return: int The value of the E_CSM energy function
         """
         h, _, p0, csm = self.prepare_parameters(x, n, i)
@@ -2725,12 +2710,9 @@ class BeamformerEA(BeamformerBase):
         a = self.real(ac)
         r = self.real(reshape(csm.T, (nc * nc, 1)))
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
-        self.val = concatenate([self.val, [result]])
-        if vis:
-            print(result)
         return result
 
-    def funcbeam(self, x, n, i, vis=False):
+    def funcbeam(self, x, n, i):
         """
         Cost function defined through functional beamforming after
         Dougherty:
@@ -2778,14 +2760,11 @@ class BeamformerEA(BeamformerBase):
                       (square(linalg.norm(y)) * trace(csm)),
                       nu)
         result = real(1 - bg)
-        self.val = concatenate([self.val, [result]])
-        if vis:
-            print(result)
         return result
 
 
 
-    def ecsm2(self, x, n, i, vis=False):
+    def ecsm2(self, x, n, i):
         """
         Cost function defined as differences of the measured CSM and
         the modeled CSM by Malgozaret al. 2017. This function defines
@@ -2805,7 +2784,6 @@ class BeamformerEA(BeamformerBase):
                 The number of sources [number of sources]
         :param i: int
                 index of frequencie
-        :param vis: boolean flag for verbose output
         :return: int The value of the E_CSM2 energy function
         """
         h, _, p0, csm = self.prepare_parameters(x, n, i)
@@ -2828,9 +2806,6 @@ class BeamformerEA(BeamformerBase):
         R = self.real(reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim,
             :]
         result = square(linalg.norm(dot(A, p0) - R[:, 0]))
-        self.val = concatenate([self.val, [result]])
-        if vis:
-            print(result)
         return result
 
     def metho(self):
@@ -2854,7 +2829,7 @@ class BeamformerEA(BeamformerBase):
                         'funcbeam': self.funcbeam}
         return costfunction.get(self.cost_function)
 
-    def bound(self, b, n, i, vis=False):
+    def bound(self, b, n, i):
         """
         Helper function for arranging of parameters for
         the different solvers
@@ -2868,11 +2843,11 @@ class BeamformerEA(BeamformerBase):
         #if self.method == 'PSO':
         #    lb = [b[k][0] for k in range(4 * n)]
         #    ub = [b[k][1] for k in range(4 * n)]
-        #    return lb, ub, [], None, (n, i, vis)
+        #    return lb, ub, [], None, (n, i)
         if self.method == 'diff_evo':
-            return b, (n, i, vis)
+            return b, (n, i)
 
-    def calculate(self, b, f, vis=False):
+    def calculate(self, b, f):
         """
         The main method which calculates the source positions and
         source strengths using the chosen method and cost function
@@ -2891,8 +2866,6 @@ class BeamformerEA(BeamformerBase):
                 to model the acoustic field
         :param f: float
                 The frequency of the narrow band.
-        :param vis: bool
-                Set this to true for print output.
         :return: scipy.optimize.OptimizeResult
                 The resulting source positions and source strengths are returned in
                 the numpy.ndarray x of the result.
@@ -2903,8 +2876,6 @@ class BeamformerEA(BeamformerBase):
 
                 [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
         """
-        self.sol = []
-        self.val = []
         n = int(len(b) / 4)
         if len(b) != 4 * n:
             print("Error wrong bounds Size of num. of Sources")
@@ -2915,16 +2886,11 @@ class BeamformerEA(BeamformerBase):
         else:
             i = where(f == self.freq_data.fftfreq())[0][0]
             res = self.METHODS.get(self.method)(self.costfunc(),
-                                                *self.bound(b, n, i,
-                                                            vis),
+                                                *self.bound(b, n, i),
                                                 **self.kwargs)
-
-            self.sol = reshape(self.sol,
-                                  (int(len(self.sol) / (4 * n)),
-                                   4 * n)).T
         return res
 
-    def calculate_third(self, b, f, vis=False):
+    def calculate_third(self, b, f):
         """
         Function which calculates the source position and source
         strengths of third octave bands using the chosen method and
