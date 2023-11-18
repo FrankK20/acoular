@@ -2556,7 +2556,7 @@ def integrate(data, grid, sector):
             h[i] = data[i].reshape(gshape)[ind].sum()
     return h
 
-class BeamformerEA(BeamformerBase):
+class BeamformerEA(BeamformerAdaptiveGrid):
     """
     The locations of the sources are sought for by using a global
     optimization method. In this way, estimates for source positions
@@ -2596,6 +2596,40 @@ class BeamformerEA(BeamformerBase):
                     'c', 'method', 'env.digest', 'steer',
                     'r_diag'],
     )
+
+    _bounds = List(desc="Bounds for the optimization",value=[(-1.,1.),(-1.,1.),(-1.,1.),(0.01,1.0)])
+    _n = Int(1, desc="Number of sources used for the reconstruction")
+
+    def _set_bounds(self, bounds):
+        """
+        Sets the bounds for the optimization.
+
+        Parameters
+        ----------
+        bounds: list of tuples
+            The bounds for the optimization.
+        """
+        if not isinstance(bounds, list):
+            raise ValueError("Bounds must be a list.")
+        if len(bounds) % 4 != 0:
+            raise ValueError("Bounds must be a list of 4 * n tuples, where n is the number of sources.")
+        for tup in bounds:
+            if not (isinstance(tup, tuple) and len(tup) == 2 and all(isinstance(i, float) for i in tup)):
+                raise ValueError("Each bound must be a tuple of two floats.")
+        self._bounds = bounds
+        self._n = len(self._bounds) // 4
+
+    def _get_bounds(self):
+        return self._bounds
+
+    def _get_n(self):
+        return self._n
+
+    def _set_n(self, value):
+        raise AttributeError("Cannot set 'n' directly. Use 'bounds' to set 'n' indirectly.")
+
+    bounds = Property(depends_on='_bounds', fset=_set_bounds, fget=_get_bounds)
+    n = Property(depends_on='_n', fget=_get_n, fset=_set_n)
 
     @cached_property
     def _get_digest(self):
