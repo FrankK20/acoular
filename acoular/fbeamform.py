@@ -377,7 +377,6 @@ class BeamformerBase(HasStrictTraits):
         if config.global_caching == 'overwrite' and self.h5f.is_cached(nodename):
             #            print("remove existing data for nodename",nodename)
             self.h5f.remove_data(nodename)  # remove old data before writing in overwrite mode
-
         if not self.h5f.is_cached(nodename):
             #            print("no data existent for nodename:", nodename)
             if config.global_caching == 'readonly':
@@ -390,7 +389,10 @@ class BeamformerBase(HasStrictTraits):
                 'int8',  #'bool',
                 group,
             )
-            if isinstance(self, BeamformerAdaptiveGrid):
+            if isinstance(self,BeamformerEA):
+                self.h5f.create_compressible_array('gpos', (3, self.size), 'float64', group)
+                self.h5f.create_compressible_array('result', (numfreq, self.n), self.precision, group)
+            elif isinstance(self, BeamformerAdaptiveGrid):
                 self.h5f.create_compressible_array('gpos', (3, self.size), 'float64', group)
                 self.h5f.create_compressible_array('result', (numfreq, self.size), self.precision, group)
             elif isinstance(self, BeamformerSODIX):
@@ -2631,6 +2633,10 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     bounds = Property(depends_on='_bounds', fset=_set_bounds, fget=_get_bounds)
     n = Property(depends_on='_n', fget=_get_n, fset=_set_n)
 
+    @property_depends_on('n')
+    def _get_size ( self ):
+        return self.n*self.freq_data.fftfreq().shape[0]
+
     @cached_property
     def _get_digest(self):
         return digest(self)
@@ -2963,3 +2969,39 @@ class BeamformerEA(BeamformerAdaptiveGrid):
             hres = self.calculate(b, fi, vis)
             res.append(hres.x)
         return array(res)
+
+    def calc(self, ac, fr):
+        """
+        Calculates the result for the frequencies defined by :attr:`freq_data`
+
+        This is an internal helper function that is automatically called when
+        accessing the beamformer's :attr:`~BeamformerBase.result` or calling
+        its :meth:`~BeamformerBase.synthetic` method.
+
+        Parameters
+        ----------
+        ac : array of floats
+            This array of dimension ([number of frequencies]x[number of gridpoints])
+            is used as call-by-reference parameter and contains the calculated
+            value after calling this method.
+        fr : array of booleans
+            The entries of this [number of frequencies]-sized array are either
+            'True' (if the result for this frequency has already been calculated)
+            or 'False' (for the frequencies where the result has yet to be calculated).
+            After the calculation at a certain frequency the value will be set
+            to 'True'
+
+        Returns
+        -------
+        This method only returns values through the *ac* and *fr* parameters
+        """
+        for i in self.freq_data.indices:
+            if not fr[i]:
+                res = self.calculate(self.bounds, self.freq_data.fftfreq()[i])
+                print("calculating frequency: ", self.freq_data.fftfreq()[i])
+                for j in range(self.n):
+                    ind = i*self.n + j
+                    self._gpos[:,ind] = res.x[4 * j:4 * j + 3]
+                    ac[i,j] = res.x[4 * j + 3]
+                    print(ac[i,j])
+                fr[i] = 1
