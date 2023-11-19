@@ -2998,10 +2998,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         for i in self.freq_data.indices:
             if not fr[i]:
                 res = self.calculate(self.bounds, self.freq_data.fftfreq()[i])
-                print("calculating frequency: ", self.freq_data.fftfreq()[i])
                 for j in range(self.n):
                     ind = i*self.n + j
                     self._gpos[:,ind] = res.x[4 * j:4 * j + 3]
                     ac[i,j] = res.x[4 * j + 3]
-                    print(ac[i,j])
                 fr[i] = 1
