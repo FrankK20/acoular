@@ -2567,29 +2567,25 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     beam former result.
     Malgoezar et al. 2017
     """
-
-    METHODS = DictStrAny(
+    # Dictionary which contains all the available global optimizers,
+    # as of not only differntial evolution is supported
+    methods = DictStrAny(
         #{'diff_evo': differential_evolution, 'PSO': pso},
         {'diff_evo': differential_evolution},
         desc="Methods Dictionary")
 
-    #: the type of the evolutionary algorithm which is used, default is
-    #: Differential Evolution
-
-    #method = Trait('diff_evo', 'PSO', desc="algorihtm method used")
-    method = Trait('diff_evo')
+    # The name of the used global optimizer method
+    #method_name = Trait('diff_evo', 'PSO', desc="algorihtm method used")
+    method_name = Trait('diff_evo')
 
     # Dictionary for Setting additional Keyword arguments of the
     # solver for example set the population for differential evolution
     # with kwargs['popsize'] = x
     kwargs = DictStrAny({})
 
-    # the type of cost function which is used, default is
-    # ecsm
-
+    # the type of cost function which is used, default is ecsm
     cost_function = Trait('ecsm', 'ecsm2', 'bartlett', 'funcbeam',
                           desc="Cost Function used")
-    """the type of cost function which is used, default is ecsm"""
 
     # internal identifier
     digest = Property(
@@ -2610,6 +2606,10 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         ----------
         bounds: list of tuples
             The bounds for the optimization.
+            [(x_s1l, x_s1r),(y_s1l, y_s1r),(z_s1l, z_s1r),(d1l, d1r), ...]
+            where l means lower  and r upper boundary
+            len(bounds)/4 defines the number of sources which are used
+            to model the acoustic field
         """
         if not isinstance(bounds, list):
             raise ValueError("Bounds must be a list.")
@@ -2647,7 +2647,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     def real(m):
         return vstack([m.real, m.imag])
 
-    def prepare_parameters(self, x, n, i):
+    def prepare_parameters(self, x, i):
         """
         Prepares the parameters for the cost functions. This includes the
         calculation of the steering vector, the cross spectral matrix (CSM),
@@ -2657,8 +2657,6 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                   This array of dimension ([number of grid points] x 4)
                   is used to give the function the coordinates of each
                   source and source strength
-        :param n: int
-                  The number of sources [number of sources]
         :param i: int
                   index of frequency
         :return: tuple
@@ -2666,10 +2664,10 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                  the source strengths at the grid points (y), the source
                  strengths (p0), and the cross spectral matrix (csm)
         """
-        if len(x) != 4 * n:
+        if len(x) != len(self.bounds):
             raise ValueError("Error: x in wrong shape")
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(n)], (n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(n)]
+        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(self.n)], (self.n, 3)).T
+        p0 = [x[4 * (k + 1) - 1] for k in range(self.n)]
         self.steer.grid = PointGrid(POS=p)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         hh = self.steer.transfer(self.freq_data.fftfreq()[i])
@@ -2678,7 +2676,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         y = dot(h, p0)
         return h, y, p0, csm
 
-    def bartlett(self, x, n, i):
+    def bartlett(self, x, i):
         """
         Cost function defined as the bartlett Processor by
         Malgozaret al. 2017. This function should be real- valued,
@@ -2708,20 +2706,17 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                   This array of dimension ([number of grid points] x 4)
                   is used to give the function the coordinates of
                   each source and source strength
-
-        :param n: int
-                  The number of sources [number of sources]
         :param i: int
                   index of frequencie
         :return: int  the value of the E_bartlett processor
         """
-        _, y, _, csm = self.prepare_parameters(x, n, i)
+        _, y, _, csm = self.prepare_parameters(x, i)
         yh = conjugate(y).T
         result = 1 - real(dot(dot(yh, csm), y) / (
                 square(linalg.norm(y)) * trace(csm)))
         return result
 
-    def ecsm(self, x, n, i):
+    def ecsm(self, x, i):
         """
         Cost function defined as differences of the measured CSM and
         the modeled CSM by Malgozaret al. 2017. This function defines
@@ -2734,16 +2729,14 @@ class BeamformerEA(BeamformerAdaptiveGrid):
 
 
         :param x: array of floats
-                This array of dimension ([number of gridpoint]x 3
-                + [number of gridpoint]) is used to give the function
-                the coordinates of each source and source strength
-        :param n: int
-                The number of sources [number of sources]
+                This array of dimension ([number of grid points]x 4)
+                is used to give the function the coordinates of each
+                source and source strength
         :param i: int
-                index of frequencie
+                index of frequency
         :return: int The value of the E_CSM energy function
         """
-        h, _, p0, csm = self.prepare_parameters(x, n, i)
+        h, _, p0, csm = self.prepare_parameters(x, i)
         nc = self.freq_data.numchannels
         bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]).transpose(2, 0, 1)
         ac = bc.reshape(nc * nc, self.rm.shape[0])
@@ -2752,12 +2745,12 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
         return result
 
-    def funcbeam(self, x, n, i):
+    def funcbeam(self, x, i):
         """
         Cost function defined through functional beamforming after
         Dougherty:
 
-        M mutally incoherent sources with strengths d_j ,  j = 1,..,N
+        M mutually incoherent sources with strengths d_j ,  j = 1,..,N
         and M number of channels.
         The array cross spectral matrix (CSM) C is given by
 
@@ -2784,14 +2777,12 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                   This array of dimension ([number of grid points] x 4)
                   is used to give the function the coordinates of each
                    source and source strength
-        :param n: int
-                  The number of sources [number of sources]
         :param i: int
                   index of frequency
         :return:  int The value of the E_fun cost function
         """
         nu = 20
-        _, y, _, csm = self.prepare_parameters(x, n, i)
+        _, y, _, csm = self.prepare_parameters(x, i)
         s, u = linalg.eig(csm)
         yh = conjugate(y).T
         c_v = dot(u, dot(power(diag(s), 1 / nu) \
@@ -2802,9 +2793,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = real(1 - bg)
         return result
 
-
-
-    def ecsm2(self, x, n, i):
+    def ecsm2(self, x, i):
         """
         Cost function defined as differences of the measured CSM and
         the modeled CSM by Malgozaret al. 2017. This function defines
@@ -2815,18 +2804,15 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                 E_{csm} =  \\sum{[\\Re(C_{meas})-\\Re(C_{model}]^2 +
                 [\\Im(C_{meas}) - \\Im(C_{model})]^2}
 
-
         :param x: array of floats
-                This array of dimension ([number of gridpoint]x 3
-                + [number of gridpoint]) is used to give the function
+                This array of dimension ([number of grid points]x 3
+                + [number of grid points]) is used to give the function
                 the coordinates of each source and source strength
-        :param n: int
-                The number of sources [number of sources]
         :param i: int
-                index of frequencie
+                index of frequency
         :return: int The value of the E_CSM2 energy function
         """
-        h, _, p0, csm = self.prepare_parameters(x, n, i)
+        h, _, p0, csm = self.prepare_parameters(x, i)
         nc = self.freq_data.numchannels
         bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]).transpose(2, 0, 1)
         ac = bc.reshape(nc * nc, self.rm.shape[0])
@@ -2848,17 +2834,6 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = square(linalg.norm(dot(A, p0) - R[:, 0]))
         return result
 
-    def metho(self):
-        """
-        Helper for returning method
-
-        :return: callable the chosen solving approach either
-        Differential Evolution of Particle Swarm Optimalization
-        """
-        #methods = {'diff_evo': differential_evolution, 'PSO': pso}
-        methods = {'diff_evo': differential_evolution}
-        return methods.get(self.method)
-
     def costfunc(self):
         """
         Helper for returning cost function
@@ -2869,10 +2844,10 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                         'funcbeam': self.funcbeam}
         return costfunction.get(self.cost_function)
 
-    def bound(self, b, n, i):
+    def hbounds(self, i):
         """
         Helper function for arranging of parameters for
-        the different solvers
+        the different global optimizers.
 
         :param b: array of tuples
         :param n: number of points
@@ -2880,30 +2855,16 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         :return: PSO: lb array, ub array
                  diff_evo: b sequence, (n,i) tuple of int
         """
-        #if self.method == 'PSO':
-        #    lb = [b[k][0] for k in range(4 * n)]
-        #    ub = [b[k][1] for k in range(4 * n)]
-        #    return lb, ub, [], None, (n, i)
-        if self.method == 'diff_evo':
-            return b, (n, i)
+        if self.method_name == 'diff_evo':
+            return self.bounds, (i,)
 
-    def calculate(self, b, f):
+    def calculate(self, f):
         """
         The main method which calculates the source positions and
         source strengths using the chosen method and cost function
         in a narrow band.
         For now just differential evolution can be chosen as method.
 
-        :param b: array of tuples
-                This array of dimension ([number of grid points] x 4)
-                gives the function boundaries for the source positions
-                and source strengths, the boundaries for each source
-                coordinate and source strength are stored in tuples
-                of float
-                [(x_s1l, x_s1r),(y_s1l, y_s1r),(z_s1l, z_s1r),(d1l, d1r), ...]
-                where l means lower  and r upper boundary
-                len(b)/4 defines the number of sources which are used
-                to model the acoustic field
         :param f: float
                 The frequency of the narrow band.
         :return: scipy.optimize.OptimizeResult
@@ -2916,34 +2877,23 @@ class BeamformerEA(BeamformerAdaptiveGrid):
 
                 [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
         """
-        n = int(len(b) / 4)
-        if len(b) != 4 * n:
-            print("Error wrong bounds Size of num. of Sources")
-            return ""
         if f not in self.freq_data.fftfreq():
             print("Error wrong frequency")
             return ""
         else:
             i = where(f == self.freq_data.fftfreq())[0][0]
-            res = self.METHODS.get(self.method)(self.costfunc(),
-                                                *self.bound(b, n, i),
+            res = self.methods.get(self.method_name)(self.costfunc(),
+                                                *self.hbounds(i),
                                                 **self.kwargs)
         return res
 
-    def calculate_third(self, b, f):
+    def calculate_third(self, f):
         """
         Function which calculates the source position and source
         strengths of third octave bands using the chosen method and
         cost function. The result is the superposition of all narrow band
         frequencies results contained in the third octave band
-        :param b: array of tuples
-                This array of dimension ([number of grid points] x 4)
-                gives the function boundaries for the source positions
-                and source strengths, the boundaries for each source
-                coordinate and source strength are stored in tuples
-                of float
-                [(x_s1l, x_s1r),(y_s1l, y_s1r),(z_s1l, z_s1r),(d1l, d1r), ...]
-                where l means lower  and r upper boundary
+
         :param f: float
                 the center frequency of the third octave band
         :param vis: boolean plotting the cost function value in console
@@ -2966,7 +2916,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
 
         for k in range(int(ind1), int(ind2)):
             fi = self.freq_data.fftfreq()[k]
-            hres = self.calculate(b, fi, vis)
+            hres = self.calculate(fi)
             res.append(hres.x)
         return array(res)
 
@@ -2997,7 +2947,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         """
         for i in self.freq_data.indices:
             if not fr[i]:
-                res = self.calculate(self.bounds, self.freq_data.fftfreq()[i])
+                res = self.calculate(self.freq_data.fftfreq()[i])
                 for j in range(self.n):
                     ind = i*self.n + j
                     self._gpos[:,ind] = res.x[4 * j:4 * j + 3]
