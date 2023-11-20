@@ -23,8 +23,8 @@ m = MicGeom(from_file=micgeofile)
 num = 1024
 freq = 800
 st = SteeringVector(mics=m, steer_type='classic')
-grid_bounds = [(-0.6, 0.6),(-0.3, 0.3), (0.68, 0.68), (0,1)]
+bounds = [(-0.6, 0.6),(-0.3, 0.3), (0.68, 0.68), (0.,1.)]
 ps = PowerSpectra(time_data=t1, window='Hanning', block_size=num)
 
 def test_beamformerea():
-    BeamformerEA(steer=st, freq_data=ps).calculate(grid_bounds, freq)
+    BeamformerEA(steer=st, freq_data=ps, bounds=bounds).calculate(freq)
