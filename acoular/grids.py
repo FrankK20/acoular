@@ -1592,33 +1592,35 @@ class MultiSector(Sector):
 class PointGrid(Grid):
     """
     Provides a 3d Grid for the beamforming results, based on given points.
-    format for pos
-    POS = [[x_1,x_2,x_3,...],[y_1,y_2,y_3,...],[z_1,z_2,z_3,...]]
+    The points can be set by setting the :attr:`~PointGrid.gpos` attribute.
     """
-    #: The points of the Grid.
-    POS = Any([[],[],[]],
-            desc="coordinates of Points")
     
     # internal identifiers
     digest = Property(
-        depends_on = ['POS']
+        depends_on = ['gpos']
         )
     
+    def _set_gpos ( self, pos ):
+        """
+        Sets the :attr:`~PointGrid.gpos` attribute.
+
+        Parameters
+        ----------
+        pos : array of floats
+            Array with the shape 3x[number of gridpoints] containing the
+            grid positions
+        """
+        if isinstance(pos, ndarray) and pos.shape[0] == 3:
+            self._gpos = pos
+        else:
+            raise ValueError("gpos must be a ndarray of shape (3, N)")
+
+    def _get_gpos ( self ):
+        """
+        Returns the :attr:`~PointGrid.gpos` attribute.
+        """
+        return self._gpos
+
     @property_depends_on('POS')
     def _get_size ( self ):
-        return size(self.POS)/3
-    
-    @cached_property
-    def _get_digest( self ):
-        return digest( self )
-
-    def pos(self):
-        """
-        Calculates grid co-ordinates.
-        
-        Returns
-        -------
-        array of floats of shape (3, :attr:`~Grid.size`)
-            The grid point x, y, z-coordinates in one array.
-        """
-        return self.POS
+        return size(self.gpos)/3
