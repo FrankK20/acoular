@@ -2666,7 +2666,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
             raise ValueError("Error: x in wrong shape")
         p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(self.n)], (self.n, 3)).T
         p0 = [x[4 * (k + 1) - 1] for k in range(self.n)]
-        self.steer.grid = PointGrid(POS=p)
+        self.steer.grid = PointGrid(gpos=p)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         hh = self.steer.transfer(self.freq_data.fftfreq()[i])
         hh = hh.reshape((1, self.rm.shape[0], self.mpos.mpos.shape[1]))
