@@ -2589,10 +2589,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
 
     # internal identifier
     digest = Property(
-        depends_on=['Sol,''mpos.digest', 'grid.digest',
-                    'freq_data.digest',
-                    'c', 'method', 'env.digest', 'steer',
-                    'r_diag'],
+        depends_on=['steer.digest', 'freq_data.digest','bounds',
+            'method_name','kwargs','cost_function'],
     )
 
     _bounds = List(desc="Bounds for the optimization",value=[(-1.,1.),(-1.,1.),(-1.,1.),(0.01,1.0)])
