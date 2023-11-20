@@ -2659,8 +2659,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                   index of frequency
         :return: tuple
                  Returns a tuple containing the steering vector (h),
-                 the source strengths at the grid points (y), the source
-                 strengths (p0), and the cross spectral matrix (csm)
+                 the source strengths at the microphone positions (y), the source
+                 strengths grid points (p0), and the cross spectral matrix (csm)
         """
         if len(x) != len(self.bounds):
             raise ValueError("Error: x in wrong shape")
@@ -2705,7 +2705,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                   is used to give the function the coordinates of
                   each source and source strength
         :param i: int
-                  index of frequencie
+                  index of frequency
         :return: int  the value of the E_bartlett processor
         """
         _, y, _, csm = self.prepare_parameters(x, i)
