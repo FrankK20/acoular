@@ -2565,7 +2565,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         desc="Methods Dictionary")
 
     # The name of the used global optimizer method
-    #method_name = Trait('diff_evo', 'PSO', desc="algorihtm method used")
+    # method_name = Trait('diff_evo', 'PSO', desc="algorihtm method used")
     method_name = Trait('diff_evo')
 
     # Dictionary for Setting additional Keyword arguments of the
