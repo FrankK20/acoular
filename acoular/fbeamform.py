@@ -109,7 +109,7 @@ from traits.trait_errors import TraitError
 from .configuration import config
 from .environments import Environment
 from .fastFuncs import beamformerFreq, calcPointSpreadFunction, calcTransfer, damasSolverGaussSeidel
-from .grids import Grid, Sector, Pgrid
+from .grids import Grid, Sector, PointGrid
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
