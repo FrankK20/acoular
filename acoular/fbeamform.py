@@ -2570,29 +2570,14 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     beam former result.
     Malgoezar et al. 2017
     """
-    # Dictionary which contains all the available global optimizers,
-    # as of not only differntial evolution is supported
-    methods = DictStrAny(
-        #{'diff_evo': differential_evolution, 'PSO': pso},
-        {'diff_evo': differential_evolution},
-        desc="Methods Dictionary")
-
-    # The name of the used global optimizer method
-    # method_name = Trait('diff_evo', 'PSO', desc="algorihtm method used")
-    method_name = Trait('diff_evo')
-
-    # Dictionary for Setting additional Keyword arguments of the
+    # Dictionary for setting additional keyword arguments of the
     # solver for example set the population for differential evolution
     # with kwargs['popsize'] = x
     kwargs = DictStrAny({})
 
-    # the type of cost function which is used, default is ecsm
-    cost_function = Trait('ecsm',  desc="Cost Function used")
-
     # internal identifier
     digest = Property(
-        depends_on=['steer.digest', 'freq_data.digest','bounds',
-            'method_name','kwargs','cost_function'],
+        depends_on=['steer.digest', 'freq_data.digest','bounds','kwargs'],
     )
 
     # Defines the bounds for the optimization [[x_l, x_u],[y_l, y_u],[z_l, z_u],[s_l, s_u]]
