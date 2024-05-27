@@ -73,23 +73,26 @@ from numpy import (
     size,
     sqrt,
     sum,  # noqa: A004
+    square,
     tile,
     trace,
     tril,
     unique,
     vstack,
+    where,
     zeros,
     zeros_like,
 )
 from packaging.version import parse
-from scipy.linalg import eigh, eigvals, fractional_matrix_power, inv, norm
-from scipy.optimize import fmin_l_bfgs_b, linprog, nnls, shgo
+from scipy.linalg import eigh, eigvals, fractional_matrix_power, inv
+from scipy.optimize import differential_evolution, fmin_l_bfgs_b, linprog, nnls, shgo
 from sklearn.linear_model import LassoLars, LassoLarsCV, LassoLarsIC, LinearRegression, OrthogonalMatchingPursuitCV
 from traits.api import (
     Any,
     Bool,
     CArray,
     Dict,
+    DictStrAny,
     Enum,
     Float,
     HasStrictTraits,
