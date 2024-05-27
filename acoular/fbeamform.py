@@ -2667,28 +2667,6 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
         return result
 
-    def costfunc(self):
-        """
-        Helper for returning cost function
-        :return: callable the bound chosen cost function
-        """
-        costfunction = {'ecsm': self.ecsm}
-        return costfunction.get(self.cost_function)
-
-    def hbounds(self, i):
-        """
-        Helper function for arranging of parameters for
-        the different global optimizers.
-
-        :param b: array of tuples
-        :param n: number of points
-        :param i: index for frequency
-        :return: PSO: lb array, ub array
-                 diff_evo: b sequence, (n,i) tuple of int
-        """
-        if self.method_name == 'diff_evo':
-            return self.bounds, (i,)
-
     def calculate(self, f):
         """
         The main method which calculates the source positions and
@@ -2713,9 +2691,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
             return ""
         else:
             i = where(f == self.freq_data.fftfreq())[0][0]
-            res = self.methods.get(self.method_name)(self.costfunc(),
-                                                *self.hbounds(i),
-                                                **self.kwargs)
+            res = differential_evolution(self.ecsm, self.bounds, (i,), **self.kwargs)
         return res
 
     def calc(self, ac, fr):
