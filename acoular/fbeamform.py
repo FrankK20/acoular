@@ -378,9 +378,9 @@ class BeamformerBase(HasStrictTraits):
         nodename = self.__class__.__name__ + self.digest
         #        print("collect filecache for nodename:",nodename)
         if config.global_caching == 'overwrite' and self.h5f.is_cached(nodename):
-
             #            print("remove existing data for nodename",nodename)
             self.h5f.remove_data(nodename)  # remove old data before writing in overwrite mode
+
         if not self.h5f.is_cached(nodename):
             #            print("no data existent for nodename:", nodename)
             if config.global_caching == 'readonly':
