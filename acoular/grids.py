@@ -42,6 +42,7 @@ from numpy import (
     isscalar,
     ma,
     mgrid,
+    ndarray,
     newaxis,
     ones,
     ones_like,
