@@ -2578,7 +2578,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
 
     # internal identifier
     digest = Property(
-        depends_on=['steer.digest', 'freq_data.digest','bounds','kwargs'],
+        depends_on=['steer.digest', 'freq_data.digest', 'n', 'bounds', 'kwargs'],
     )
 
     # Defines the bounds for the optimization [[x_l, x_u],[y_l, y_u],[z_l, z_u],[s_l, s_u]]
