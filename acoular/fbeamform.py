@@ -2657,9 +2657,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     def calculate(self, f):
         """
         The main method which calculates the source positions and
-        source strengths using the chosen method and cost function
-        in a narrow band.
-        For now just differential evolution can be chosen as method.
+        source strengths using differential evolution and the ecsm
+        cost function in a narrow band.
 
         :param f: float
                 The frequency of the narrow band.
