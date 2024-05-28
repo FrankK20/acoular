@@ -2319,15 +2319,15 @@ class BeamformerAdaptiveGrid(BeamformerBase, Grid):
     # the grid positions live in a shadow trait
     _gpos = Any
 
-    rsize = Property(description='size of the cached result array')
+    rsize = Property(description='shape of the cached result')
 
-    gsize = Property(description='size of the cached grid array')
+    gsize = Property(description='shape of the cached grid')
 
     def _get_rsize(self):
-        return 1
+        return (self.freq_data.fftfreq().shape[0], self.grid.size)
 
     def _get_gsize(self):
-        return 1
+        return (3, self.grid.size)
 
     def _get_shape(self):
         return (self.size,)
