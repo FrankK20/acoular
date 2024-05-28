@@ -1622,6 +1622,6 @@ class PointGrid(Grid):
         """
         return self._gpos
 
-    @property_depends_on('POS')
+    @property_depends_on('gpos')
     def _get_size ( self ):
         return size(self.gpos)/3
