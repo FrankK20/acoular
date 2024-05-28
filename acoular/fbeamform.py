@@ -2606,7 +2606,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     def ecsm(self, x, i):
         """
         Cost function defined as differences of the measured CSM and
-        the modeled CSM by Malgozaret al. 2017. This function defines
+        the modeled CSM by Malgoezar et al. 2017. This function defines
         the matrix fitting problem. This implementation also removes
         the main diagonal of the CSM when r_diag is set to True.
 
@@ -2646,7 +2646,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         else:
             # take all real parts in the lower triangle matrix
             # and the imaginary parts in the lower triangle matrix
-            # escluding the diagonal since the imaginary part is 0
+            # excluding the diagonal since the imaginary part is 0
             # on the diagonal
             ind_reim = hstack([ones(size(ind_im0), ) > 0, ind_im0])
         a = self.real(ac[ind, :])[ind_reim, :]
