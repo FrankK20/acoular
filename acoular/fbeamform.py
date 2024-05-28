@@ -450,11 +450,23 @@ class BeamformerBase(HasStrictTraits):
             elif isinstance(self, BeamformerSODIX):
                 ac = zeros((self._numfreq, self.steer.grid.size * self.steer.mics.num_mics), dtype=self.precision)
             else:
+<<<<<<< HEAD
                 ac = zeros((self._numfreq, self.steer.grid.size), dtype=self.precision)
             fr = zeros(self._numfreq, dtype='int8')
         self._ac = ac
         self._fr = fr
         return LazyBfResult(self)
+=======
+                #                print("no caching or not activated, calculate result")
+                if isinstance(self,BeamformerAdaptiveGrid):
+                    self._gpos = zeros(self.gsize, dtype=self.precision)
+                    ac = zeros(self.rsize, dtype=self.precision)
+                else:
+                    ac = zeros((numfreq, self.steer.grid.size), dtype=self.precision)
+                fr = zeros(numfreq, dtype='int8')
+                self.calc(ac, fr)
+        return ac
+>>>>>>> 2445f0e (add properties rsize and gsize to set the dimension of the cache for BeamformerAdaptiveGrid)
 
     def sig_loss_norm(self):
         """If the diagonal of the CSM is removed one has to handle the loss
@@ -2307,6 +2319,16 @@ class BeamformerAdaptiveGrid(BeamformerBase, Grid):
     # the grid positions live in a shadow trait
     _gpos = Any
 
+    rsize = Property(description='size of the cached result array')
+
+    gsize = Property(description='size of the cached grid array')
+
+    def _get_rsize(self):
+        return 1
+
+    def _get_gsize(self):
+        return 1
+
     def _get_shape(self):
         return (self.size,)
 
@@ -2395,8 +2417,12 @@ class BeamformerGridlessOrth(BeamformerAdaptiveGrid):
         self.eva_list = arange(-1, -1 - self.n, -1)
 
     @property_depends_on('n')
-    def _get_size(self):
-        return self.n * self.freq_data.fftfreq().shape[0]
+    def _get_rsize(self):
+        return (self.freq_data.fftfreq().shape[0], self.n * self.freq_data.fftfreq().shape[0])
+
+    @property_depends_on('n')
+    def _get_gsize(self):
+        return (3, self.n * self.freq_data.fftfreq().shape[0])
 
     def _calc(self, ind):
         """Calculates the result for the frequencies defined by :attr:`freq_data`.
@@ -2592,6 +2618,15 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     @property_depends_on('n')
     def _get_size ( self ):
         return self.n*self.freq_data.fftfreq().shape[0]
+
+
+    @property_depends_on('n')
+    def _get_rsize(self):
+        return (self.freq_data.fftfreq().shape[0], self.n)
+
+    @property_depends_on('n')
+    def _get_gsize(self):
+        return (3, self.n * self.freq_data.fftfreq().shape[0])
 
     @cached_property
     def _get_digest(self):
