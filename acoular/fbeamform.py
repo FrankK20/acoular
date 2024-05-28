@@ -2622,10 +2622,11 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                 index of frequency
         :return: int The value of the E_CSM energy function
         """
-        if len(x) != len(self.bounds):
+        if len(x) != len(self.n * self.bounds):
             raise ValueError("Error: x in wrong shape")
-        p = reshape([x[4 * k:4 * (k + 1) - 1] for k in range(self.n)], (self.n, 3)).T
-        p0 = [x[4 * (k + 1) - 1] for k in range(self.n)]
+        x = x.reshape((self.n, 4))
+        p = x[:,:3].T # source positions
+        p0 = x[:,3] # source strengths
         self.steer.grid = PointGrid(gpos=p)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         hh = self.steer.transfer(self.freq_data.fftfreq()[i])
@@ -2677,7 +2678,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
             return ""
         else:
             i = where(f == self.freq_data.fftfreq())[0][0]
-            res = differential_evolution(self.ecsm, self.bounds, (i,), **self.kwargs)
+            res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
         return res
 
     def calc(self, ac, fr):
@@ -2708,8 +2709,9 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         for i in self.freq_data.indices:
             if not fr[i]:
                 res = self.calculate(self.freq_data.fftfreq()[i])
-                for j in range(self.n):
-                    ind = i*self.n + j
-                    self._gpos[:,ind] = res.x[4 * j:4 * j + 3]
-                    ac[i,j] = res.x[4 * j + 3]
+                x = res.x.reshape((self.n, 4))
+                p = x[:,:3].T # source positions
+                p0 = x[:,3] # source strengths
+                self._gpos[:,i*self.n : (i+1)*self.n] = p
+                ac[i,:] = p0
                 fr[i] = 1
