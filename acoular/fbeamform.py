@@ -393,10 +393,7 @@ class BeamformerBase(HasStrictTraits):
                 'int8',  #'bool',
                 group,
             )
-            if isinstance(self,BeamformerEA):
-                self.h5f.create_compressible_array('gpos', (3, self.size), 'float64', group)
-                self.h5f.create_compressible_array('result', (numfreq, self.n), self.precision, group)
-            elif isinstance(self, BeamformerAdaptiveGrid):
+            if isinstance(self, BeamformerAdaptiveGrid):
                 self.h5f.create_compressible_array('gpos', (3, self.size), 'float64', group)
                 self.h5f.create_compressible_array('result', (numfreq, self.size), self.precision, group)
             elif isinstance(self, BeamformerSODIX):
@@ -2712,5 +2709,5 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                 p = x[:,:3].T # source positions
                 p0 = x[:,3] # source strengths
                 self._gpos[:,i*self.n : (i+1)*self.n] = p
-                ac[i,:] = p0
+                ac[i,i*self.n:(i+1)*self.n] = p0
                 fr[i] = 1
