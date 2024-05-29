@@ -2612,9 +2612,14 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                 [\\Im(C_{meas}) - \\Im(C_{model})]^2}
 
         :param x: array of floats
-                This array of dimension ([number of grid points]x 3
-                + [number of grid points]) is used to give the function
-                the coordinates of each source and source strength
+                This array of dimension ([number of grid points]x 4)
+                is used to give the function the coordinates of each
+                source and source strength. The corridinates x_si, y_si, z_si
+                of each source i and source strengths di. Are arranged
+                in one array in such order :
+
+                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
+
         :param i: int
                 index of frequency
         :return: int The value of the E_CSM energy function
@@ -2651,32 +2656,6 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
         return result
 
-    def calculate(self, f):
-        """
-        The main method which calculates the source positions and
-        source strengths using differential evolution and the ecsm
-        cost function in a narrow band.
-
-        :param f: float
-                The frequency of the narrow band.
-        :return: scipy.optimize.OptimizeResult
-                The resulting source positions and source strengths are returned in
-                the numpy.ndarray x of the result.
-                This array of dimension ([len(b)]) contains the
-                coordinates x_si, y_si, z_si and source strengths di
-                of each source. They are arranged in one array in such
-                order :
-
-                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
-        """
-        if f not in self.freq_data.fftfreq():
-            print("Error wrong frequency")
-            return ""
-        else:
-            i = where(f == self.freq_data.fftfreq())[0][0]
-            res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
-        return res
-
     def calc(self, ac, fr):
         """
         Calculates the result for the frequencies defined by :attr:`freq_data`
@@ -2704,7 +2683,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         """
         for i in self.freq_data.indices:
             if not fr[i]:
-                res = self.calculate(self.freq_data.fftfreq()[i])
+                res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
                 x = res.x.reshape((self.n, 4))
                 p = x[:,:3].T # source positions
                 p0 = x[:,3] # source strengths
