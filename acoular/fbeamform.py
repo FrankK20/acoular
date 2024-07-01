@@ -2656,37 +2656,30 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         result = square(linalg.norm(dot(a, p0) - r[:, 0]))
         return result
 
-    def calc(self, ac, fr):
+    def _calc(self, ind):
         """
-        Calculates the result for the frequencies defined by :attr:`freq_data`
+        Calculates the result for the frequencies defined by :attr:`freq_data`.
 
         This is an internal helper function that is automatically called when
-        accessing the beamformer's :attr:`~BeamformerBase.result` or calling
-        its :meth:`~BeamformerBase.synthetic` method.
+        accessing the beamformer's :attr:`result` or calling
+        its :meth:`synthetic` method.
 
         Parameters
         ----------
-        ac : array of floats
-            This array of dimension ([number of frequencies]x[number of gridpoints])
-            is used as call-by-reference parameter and contains the calculated
-            value after calling this method.
-        fr : array of booleans
-            The entries of this [number of frequencies]-sized array are either
-            'True' (if the result for this frequency has already been calculated)
-            or 'False' (for the frequencies where the result has yet to be calculated).
-            After the calculation at a certain frequency the value will be set
-            to 'True'
+        ind : array of int
+            This array contains all frequency indices for which (re)calculation is
+            to be performed
 
         Returns
         -------
-        This method only returns values through the *ac* and *fr* parameters
+        This method only returns values through :attr:`_ac` and :attr:`_fr`
+
         """
-        for i in self.freq_data.indices:
-            if not fr[i]:
-                res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
-                x = res.x.reshape((self.n, 4))
-                p = x[:,:3].T # source positions
-                p0 = x[:,3] # source strengths
-                self._gpos[:,i*self.n : (i+1)*self.n] = p
-                ac[i,i*self.n:(i+1)*self.n] = p0
-                fr[i] = 1
+        for i in ind:
+            res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
+            x = res.x.reshape((self.n, 4))
+            p = x[:,:3].T # source positions
+            p0 = x[:,3] # source strengths
+            self._gpos[:,i*self.n : (i+1)*self.n] = p
+            self._ac[i,i*self.n:(i+1)*self.n] = p0
+            self._fr[i] = 1
