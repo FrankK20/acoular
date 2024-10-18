@@ -9,7 +9,7 @@ import os  # noqa: I001
 # config must be imported before any submodules containing numpy, see #322.
 from .configuration import config
 
-from . import demo, tools, aiaa
+from . import aiaa, demo, tools, rotating
 from .base import (
     Generator,
     InOut,
