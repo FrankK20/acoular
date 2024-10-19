@@ -568,7 +568,7 @@ class AngleTracker(MaskedTimeOut):
     capable of handling different rotational directions and numbers of triggers per revolution.
     """
 
-    #: Trigger data from :class:`acoular.tprocess.Trigger`.
+    #: Trigger data from :class:`acoular.tprocess.TriggerLegacy`.
     trigger = Instance(TriggerLegacy)
 
     #: A unique identifier for the tracker, based on its properties. (read-only)
