@@ -89,6 +89,7 @@ from .rotating import (
     AngleTrajectory,
     Trigger, 
     FeatureTrigger,
+    PowerSpectraDR,
     SpaceModesTransformer,
     VirtualRotator,
     VirtualRotatorAngle,
