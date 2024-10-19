@@ -14,7 +14,7 @@ Implement blockwise processing in the time domain.
     :toctree: generated/
 
     MaskedTimeOut
-    Trigger
+    TriggerLegacy
     AngleTracker
     ChannelMixer
     SpatialInterpolator
@@ -323,9 +323,9 @@ class ChannelMixer(TimeOut):
             yield np.sum(weights * block, 1, keepdims=True)
 
 
-class Trigger(TimeOut):  # pragma: no cover
-    """
-    A signal processing class for detecting and analyzing trigger signals in time-series data.
+class TriggerLegacy(TimeOut):
+    """Class for identifying trigger signals.
+    Gets samples from :attr:`source` and stores the trigger samples in :meth:`trigger_data`.
 
     The :class:`Trigger` class identifies trigger events in a single-channel signal provided by a
     :class:`~acoular.base.SamplesGenerator` source. The detection process involves:
@@ -568,8 +568,8 @@ class AngleTracker(MaskedTimeOut):
     capable of handling different rotational directions and numbers of triggers per revolution.
     """
 
-    #: Trigger data source, expected to be an instance of :class:`Trigger`.
-    trigger = Instance(Trigger)
+    #: Trigger data from :class:`acoular.tprocess.Trigger`.
+    trigger = Instance(TriggerLegacy)
 
     #: A unique identifier for the tracker, based on its properties. (read-only)
     digest = Property(
