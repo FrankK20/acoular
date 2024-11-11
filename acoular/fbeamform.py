@@ -24,7 +24,7 @@
     BeamformerGIB
     BeamformerAdaptiveGrid
     BeamformerGridlessOrth
-	BeamformerEA
+    BeamformerEA
     PointSpreadFunction
     L_p
     integrate
@@ -79,12 +79,11 @@ from numpy import (
     tril,
     unique,
     vstack,
-    where,
     zeros,
     zeros_like,
 )
 from packaging.version import parse
-from scipy.linalg import eigh, eigvals, fractional_matrix_power, inv
+from scipy.linalg import eigh, eigvals, fractional_matrix_power, inv, norm
 from scipy.optimize import differential_evolution, fmin_l_bfgs_b, linprog, nnls, shgo
 from sklearn.linear_model import LassoLars, LassoLarsCV, LassoLarsIC, LinearRegression, OrthogonalMatchingPursuitCV
 from traits.api import (
@@ -113,7 +112,7 @@ from .configuration import config
 from .deprecation import deprecated_alias
 from .environments import Environment
 from .fastFuncs import beamformerFreq, calcPointSpreadFunction, calcTransfer, damasSolverGaussSeidel
-from .grids import Grid, Sector, PointGrid
+from .grids import Grid, PointGrid, Sector
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
@@ -2560,7 +2559,8 @@ def integrate(data, grid, sector):
     return h
 
 class BeamformerEA(BeamformerAdaptiveGrid):
-    """
+    """Beamforming with evolutionary algorithm.
+
     The locations of the sources are sought for by using a global
     optimization method. In this way, estimates for source positions
     and source strengths are obtained as a solution of the
@@ -2568,6 +2568,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     beam former result.
     Malgoezar et al. 2017
     """
+
     # Dictionary for setting additional keyword arguments of the
     # solver for example set the population for differential evolution
     # with kwargs['popsize'] = x
@@ -2608,8 +2609,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         the main diagonal of the CSM when r_diag is set to True.
 
         .. math::
-                E_{csm} =  \\sum{[\\Re(C_{meas})-\\Re(C_{model}]^2 +
-                [\\Im(C_{meas}) - \\Im(C_{model})]^2}
+                E_{csm} =  sum{[Re(C_{meas})-Re(C_{model}]^2 +
+                [Im(C_{meas}) - Im(C_{model})]^2}
 
         :param x: array of floats
                 This array of dimension ([number of grid points]x 4)
@@ -2625,7 +2626,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         :return: int The value of the E_CSM energy function
         """
         if len(x) != len(self.n * self.bounds):
-            raise ValueError("Error: x in wrong shape")
+            msg = "Error: x in wrong shape"
+            raise ValueError(msg)
         x = x.reshape((self.n, 4))
         p = x[:,:3].T # source positions
         p0 = x[:,3] # source strengths
@@ -2642,19 +2644,15 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         ind = reshape(tril(ones((nc, nc))), (nc * nc,)) > 0
         ind_im0 = (reshape(eye(nc), (nc * nc,)) == 0)[ind]
         # if diagonal is removed
-        if self.r_diag:
-            # omit main diagonal for noise reduction
-            ind_reim = hstack([ind_im0, ind_im0])
-        else:
-            # take all real parts in the lower triangle matrix
-            # and the imaginary parts in the lower triangle matrix
-            # excluding the diagonal since the imaginary part is 0
-            # on the diagonal
-            ind_reim = hstack([ones(size(ind_im0), ) > 0, ind_im0])
+        # omit main diagonal for noise reduction
+        # take all real parts in the lower triangle matrix
+        # and the imaginary parts in the lower triangle matrix
+        # excluding the diagonal since the imaginary part is 0
+        # on the diagonal
+        ind_reim = hstack([ind_im0, ind_im0]) if self.r_diag else hstack([ones(size(ind_im0)) > 0, ind_im0])
         a = self.real(ac[ind, :])[ind_reim, :]
         r = self.real(reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim, :]
-        result = square(linalg.norm(dot(a, p0) - r[:, 0]))
-        return result
+        return square(norm(dot(a, p0) - r[:, 0]))
 
     def _calc(self, ind):
         """
