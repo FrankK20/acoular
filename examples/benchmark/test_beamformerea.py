@@ -1,12 +1,19 @@
-# -*- coding: utf-8 -*-
 # ------------------------------------------------------------------------------
 # Copyright (c) Acoular Development Team.
 # ------------------------------------------------------------------------------
 # acoular imports
 from os.path import join
 
-from acoular import ( BeamformerEA, PowerSpectra, Environment, MaskedTimeSamples,
-                      MicGeom, RectGrid, SteeringVector, config)
+from acoular import (
+    BeamformerEA,
+    Environment,
+    MaskedTimeSamples,
+    MicGeom,
+    PowerSpectra,
+    RectGrid,
+    SteeringVector,
+    config,
+)
 
 config.global_caching = 'none'  # to make sure that nothing is cached
 
@@ -23,8 +30,9 @@ m = MicGeom(from_file=micgeofile)
 num = 1024
 freq = 800
 st = SteeringVector(mics=m, steer_type='classic')
-bounds = [(-0.6, 0.6),(-0.3, 0.3), (0.68, 0.68), (0.,1.)]
+bounds = [(-0.6, 0.6), (-0.3, 0.3), (0.68, 0.68), (0.0, 1.0)]
 ps = PowerSpectra(time_data=t1, window='Hanning', block_size=num)
+
 
 def test_beamformerea():
     BeamformerEA(steer=st, freq_data=ps, bounds=bounds).calculate(freq)
