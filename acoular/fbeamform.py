@@ -2558,6 +2558,7 @@ def integrate(data, grid, sector):
             h[i] = data[i].reshape(gshape)[ind].sum()
     return h
 
+
 class BeamformerEA(BeamformerAdaptiveGrid):
     """Beamforming with evolutionary algorithm.
 
@@ -2580,16 +2581,17 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     )
 
     # Defines the bounds for the optimization [[x_l, x_u],[y_l, y_u],[z_l, z_u],[s_l, s_u]]
-    # where l means lower  and u upper boundary, s is the source strength, x,y,z are the source positions.
+    # where l means lower  and u upper boundary, s is the source strength, x,y,z are the source
+    # positions.
     # The same bounds are used for all sources.
-    bounds = List(Tuple(Float, Float), minlen=4, maxlen=4, value=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0),(0.01, 1.0)])
+    bounds = List(Tuple(Float, Float), minlen=4, maxlen=4, value=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (0.01, 1.0)])
 
     # Number of sources used for the reconstruction
-    n = Int(1, desc="Number of sources used for the reconstruction")
+    n = Int(1, desc='Number of sources used for the reconstruction')
 
     @property_depends_on('n')
-    def _get_size ( self ):
-        return self.n*self.freq_data.fftfreq().shape[0]
+    def _get_size(self):
+        return self.n * self.freq_data.fftfreq().shape[0]
 
     @cached_property
     def _get_digest(self):
@@ -2626,11 +2628,11 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         :return: int The value of the E_CSM energy function
         """
         if len(x) != len(self.n * self.bounds):
-            msg = "Error: x in wrong shape"
+            msg = 'Error: x in wrong shape'
             raise ValueError(msg)
         x = x.reshape((self.n, 4))
-        p = x[:,:3].T # source positions
-        p0 = x[:,3] # source strengths
+        p = x[:, :3].T  # source positions
+        p0 = x[:, 3]  # source strengths
         self.steer.grid = PointGrid(gpos=p)
         csm = array(self.freq_data.csm[i], dtype='complex128')
         hh = self.steer.transfer(self.freq_data.fftfreq()[i])
@@ -2676,8 +2678,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         for i in ind:
             res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
             x = res.x.reshape((self.n, 4))
-            p = x[:,:3].T # source positions
-            p0 = x[:,3] # source strengths
-            self._gpos[:,i*self.n : (i+1)*self.n] = p
-            self._ac[i,i*self.n:(i+1)*self.n] = p0
+            p = x[:, :3].T  # source positions
+            p0 = x[:, 3]  # source strengths
+            self._gpos[:, i * self.n : (i + 1) * self.n] = p
+            self._ac[i, i * self.n : (i + 1) * self.n] = p0
             self._fr[i] = 1
