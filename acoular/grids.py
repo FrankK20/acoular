@@ -1590,6 +1590,7 @@ class MultiSector(Sector):
 
         return inds.astype(bool)
 
+
 class PointGrid(Grid):
     """
     Provides a 3d Grid for the beamforming results, based on given points.
@@ -1597,11 +1598,9 @@ class PointGrid(Grid):
     """
 
     # internal identifiers
-    digest = Property(
-        depends_on = ['gpos']
-        )
+    digest = Property(depends_on=['gpos'])
 
-    def _set_gpos ( self, pos ):
+    def _set_gpos(self, pos):
         """
         Sets the :attr:`~PointGrid.gpos` attribute.
 
@@ -1614,13 +1613,13 @@ class PointGrid(Grid):
         if isinstance(pos, ndarray) and pos.shape[0] == 3:
             self._gpos = pos
         else:
-            msg = "gpos must be a ndarray of shape (3, N)"
+            msg = 'gpos must be a ndarray of shape (3, N)'
             raise ValueError(msg)
 
-    def _get_gpos ( self ):
+    def _get_gpos(self):
         """Returns the :attr:`~PointGrid.gpos` attribute."""
         return self._gpos
 
     @property_depends_on('gpos')
-    def _get_size ( self ):
+    def _get_size(self):
         return self.gpos.shape[-1]
