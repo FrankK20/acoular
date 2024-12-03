@@ -72,8 +72,8 @@ from numpy import (
     sign,
     size,
     sqrt,
-    sum,  # noqa: A004
     square,
+    sum,  # noqa: A004
     tile,
     trace,
     tril,
