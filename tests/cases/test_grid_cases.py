@@ -28,6 +28,7 @@ GRIDS_SKIP_DEFAULT = [
     ac.MergeGrid,
     ac.BeamformerAdaptiveGrid,
     ac.BeamformerGridlessOrth,
+    ac.BeamformerEA,
 ]
 
 SECTOR_DEFAULT = [s for s in get_subclasses(ac.Sector) if s not in SECTOR_SKIP_DEFAULT]

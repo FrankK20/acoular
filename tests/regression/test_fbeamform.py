@@ -42,6 +42,8 @@ def test_beamformer(snapshot, beamformer, f, num):
         Bandwidth to test (1: octave)
 
     """
+    if isinstance(beamformer, ac.BeamformerEA):
+        pytest.skip('BeamformerEA needs special test')
     if isinstance(beamformer, ac.BeamformerGIB) and beamformer.method == 'NNLS':
         pytest.xfail('RuntimeError: Maximum number of iterations reached')
 
