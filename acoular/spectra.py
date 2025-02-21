@@ -32,7 +32,6 @@ from numpy import (
     hanning,
     imag,
     isrealobj,
-    isscalar,
     linalg,
     ndarray,
     newaxis,
@@ -190,21 +189,22 @@ class BaseSpectra(ABCHasStrictTraits):
         return None
 
     #: --------------------------------
-    # TODO: This has done by checking source.dtype or so in the future
-    source_isreal = Property(desc='check if source is real')
+    # TODO: This should be done by checking source.dtype or so in the future
+    source_isreal = Property(desc='check if source type is real')
     
     @cached_property
     def _get_source_isreal(self):
         return isrealobj(next(self.source.result(1)))
     #  --------------------------------
 
+
     # generator that yields the time data blocks for every channel (with optional overlap)
     def _get_source_data(self):
         bs = self.block_size
-        if self._source_isreal:
-            temp = empty((2 * bs, self.numchannels))
+        if self.source_isreal:
+            temp = empty((2 * bs, self.num_channels))
         else:
-            temp = empty((2 * bs, self.numchannels), dtype=complex)
+            temp = empty((2 * bs, self.num_channels), dtype=complex)
         pos = bs
         posinc = bs / self.overlap_
         for data_block in self.source.result(bs):
@@ -413,7 +413,7 @@ class PowerSpectra(BaseSpectra):
         csm_upper = np.zeros(csm_shape, dtype=self.precision)
         # get time data blockwise
         # use faster rfft if input is real, otherwise full fft
-        if self._source_isreal:
+        if self.source_isreal:
             fft_func = fft.rfft
         else:
             fft_func = fft.fft
