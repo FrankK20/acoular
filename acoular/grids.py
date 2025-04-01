@@ -1600,6 +1600,9 @@ class PointGrid(Grid):
     # internal identifiers
     digest = Property(depends_on=['gpos'])
 
+    gpos = CArray(desc='x, y, z positions of grid points')
+
+
     def _set_gpos(self, pos):
         """
         Sets the :attr:`~PointGrid.gpos` attribute.
@@ -1611,15 +1614,19 @@ class PointGrid(Grid):
             grid positions
         """
         if isinstance(pos, ndarray) and pos.shape[0] == 3:
-            self._gpos = pos
+            self.gpos = pos
         else:
             msg = 'gpos must be a ndarray of shape (3, N)'
             raise ValueError(msg)
 
-    def _get_gpos(self):
-        """Returns the :attr:`~PointGrid.gpos` attribute."""
-        return self._gpos
-
     @property_depends_on('gpos')
     def _get_size(self):
         return self.gpos.shape[-1]
+
+    @property_depends_on('gpos')
+    def _get_pos(self):
+        return self.gpos
+
+    @cached_property
+    def _get_digest(self):
+        return digest(self)
