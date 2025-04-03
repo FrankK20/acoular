@@ -91,7 +91,6 @@ from traits.api import (
     Bool,
     CArray,
     Dict,
-    DictStrAny,
     Enum,
     Float,
     HasStrictTraits,
@@ -2573,7 +2572,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     # Dictionary for setting additional keyword arguments of the
     # solver for example set the population for differential evolution
     # with kwargs['popsize'] = x
-    kwargs = DictStrAny({})
+    kwargs = Dict({})
 
     # internal identifier
     digest = Property(
