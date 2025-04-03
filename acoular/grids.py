@@ -1624,6 +1624,10 @@ class PointGrid(Grid):
         return self.gpos.shape[-1]
 
     @property_depends_on('gpos')
+    def _get_shape(self):
+        return (self.gpos.shape[-1])
+
+    @property_depends_on('gpos')
     def _get_pos(self):
         return self.gpos
 
