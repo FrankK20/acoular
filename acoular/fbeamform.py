@@ -2638,7 +2638,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         hh = hh.reshape((1, self.steer.rm.shape[0], self.steer.mics.pos.shape[1]))
         h = hh[0].T
 
-        nc = self.freq_data.numchannels
+        nc = self.freq_data.num_channels
         bc = (h[:, :, newaxis] * h.conjugate().T[newaxis, :, :]).transpose(2, 0, 1)
         ac = bc.reshape(nc * nc, self.steer.rm.shape[0])
         # get indices for lower triangular matrices
