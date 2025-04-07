@@ -1602,7 +1602,6 @@ class PointGrid(Grid):
 
     gpos = CArray(desc='x, y, z positions of grid points')
 
-
     def _set_gpos(self, pos):
         """
         Sets the :attr:`~PointGrid.gpos` attribute.
@@ -1625,7 +1624,7 @@ class PointGrid(Grid):
 
     @property_depends_on('gpos')
     def _get_shape(self):
-        return (self.gpos.shape[-1])
+        return self.gpos.shape[-1]
 
     @property_depends_on('gpos')
     def _get_pos(self):
