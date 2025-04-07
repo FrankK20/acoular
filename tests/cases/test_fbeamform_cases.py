@@ -25,6 +25,7 @@ BF_SKIP_DEFAULT = [
     ac.BeamformerSODIX,
     ac.BeamformerGridlessOrth,
     ac.BeamformerAdaptiveGrid,
+    ac.BeamformerEA,
 ]
 
 BF_DEFAULT = [bf for bf in get_subclasses(ac.BeamformerBase) if bf not in BF_SKIP_DEFAULT]
@@ -171,6 +172,15 @@ class Beamformer:
             steer=regression_source_case.steer,
             n=1,
             shgo={'n': 16},
+        )
+
+    @case(id='EA')
+    @parametrize('r_diag', [False, True], ids=['rdiag-False', 'rdiag-True'])
+    def case_BeamformerEA(self, r_diag, regression_source_case):
+        return ac.BeamformerEA(
+            r_diag=r_diag,
+            freq_data=regression_source_case.freq_data_import,
+            steer=regression_source_case.steer,
         )
 
     @parametrize('bf', BF_DEFAULT)
