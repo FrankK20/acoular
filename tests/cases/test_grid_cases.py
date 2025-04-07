@@ -68,7 +68,7 @@ class Grids:
                 ac.LineGrid(loc=(-1, 0, 1), length=2, num_points=3),
             ]
         )
-    
+
     def case_PointGrid(self):
         return ac.PointGrid(gpos=np.array([[0], [0], [1]]))
 
