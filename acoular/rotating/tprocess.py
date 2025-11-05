@@ -29,7 +29,7 @@ from numpy import (absolute, angle, arange, argsort, array, ceil, empty, exp,
                    newaxis, pad, pi, roll, sinc, sqrt, zeros)
 from scipy.interpolate import interp1d
 from scipy.signal import butter, decimate, filtfilt
-from traits.api import (Any, Bool, Float, Instance, Int, List, ListInt,
+from traits.api import (Any, Bool, Float, Instance, Int, List,
                         Property, Trait, Tuple, cached_property)
 
 from acoular.base import TimeOut
@@ -49,7 +49,7 @@ class SpaceModesTransformer ( TimeOut ):
     #: Channels to be used and their order, so that neighboring mics are 
     #: channel neighbors as well (last is neigbor to first). 
     #: If left emtpy, mics are just used in their current order. 
-    channel_order = ListInt([],
+    channel_order = List([],
         desc="list of mic channels in correct order")
 
     #: Direction of transformation:
@@ -636,7 +636,7 @@ class VirtualRotatorSpatial ( TimeOut ):
          the retarded time (instead of each grid point)
     """
 
-    channel_order = ListInt([],
+    channel_order = List([],
         desc="list of mic channels in correct order")
 
     #: Rotational speed in rps. Positive, if rotation is around positive z-axis sense,
