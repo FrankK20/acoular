@@ -68,7 +68,7 @@ from .grids import (
     Sector,
 )
 from .microphones import MicGeom
-from .process import Average, Cache, SampleSplitter, TimeAverage, TimeCache
+from .process import Average, Cache, SampleSplitter, Average, Cache
 
 # import new stuff from rotating
 from .rotating import (
