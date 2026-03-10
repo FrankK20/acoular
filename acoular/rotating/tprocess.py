@@ -26,7 +26,7 @@ from warnings import warn
 # imports from other packages
 from numpy import (absolute, angle, arange, argsort, array, ceil, empty, exp,
                    fft, hstack, integer, isscalar, linspace, matrix, median,
-                   newaxis, pad, pi, roll, sinc, sqrt, zeros)
+                   newaxis, pad, pi, roll, sinc, sqrt, sum, zeros)
 from scipy.interpolate import interp1d
 from scipy.signal import butter, decimate, filtfilt
 from traits.api import (Any, Bool, Float, Instance, Int, List,
