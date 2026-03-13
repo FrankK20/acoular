@@ -96,6 +96,8 @@ from .rotating import (
     VirtualRotatorModal,
     VirtualRotatorSpatial,
     RotationalSpeedDetector,
+    RotationalSpeedDetectorPairs,
+    RotationalSpeedDetectorAllPairs,
     RotationalSpeedDetector2,
     RotationalSpeedDetector3,
     RotationalSpeed,

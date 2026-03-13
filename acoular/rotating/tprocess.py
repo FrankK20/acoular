@@ -907,6 +907,581 @@ class RotationalSpeedDetector( TimeOut ):
                 
         if ind_out > 0:
             yield result_full[:ind_out]
+
+import numpy as np
+from scipy.signal import butter, filtfilt
+from numpy import angle, absolute, median, pad, roll, zeros, hstack
+from scipy import fft
+import h5py
+
+class RotationalSpeedDetectorPairs(RotationalSpeedDetector):
+    """
+    Extension of RotationalSpeedDetector that also exposes per-pair
+    rotational spectra for all available mode pairs.
+
+    Notes
+    -----
+    pair_spectra contains one spectrum per (dm, pair_index).
+    By default this stores normalized magnitudes:
+        abs(pmfpart) / median(abs(pmfpart), axis=0)
+    which is usually best for separate inspection.
+    """
+
+    eps = 1e-12
+
+    def pair_result(self, num, store="norm"):
+        """
+        Yield dictionaries with:
+            total_spectrum : (n_out, n_freq)
+            pair_spectra   : (n_out, n_dm, n_freq, n_pairs)
+            pair_modes     : (n_dm, n_pairs, 2)
+            rps_freqs      : (n_freq,)
+            dm_list        : (n_dm,)
+
+        Parameters
+        ----------
+        num : int
+            Number of output steps per yielded block.
+        store : {"norm", "abs", "complex"}
+            What to store for each pair:
+            - "norm": abs(pmfpart) / median(abs(pmfpart), axis=0)
+            - "abs":  abs(pmfpart)
+            - "complex": complex pmfpart itself
+        """
+        bs = self.block_size
+        step = self.sample_step
+        modelist = np.asarray(self.source.modes)
+        nmodes = len(modelist)
+
+        f_low, f_high = self.band_pass
+        if f_low > 0:
+            b, a = butter(8, f_low / self.source.sample_freq * 2, btype="highpass")
+        if f_high > 0:
+            bh, ah = butter(8, f_high / self.source.sample_freq * 2, btype="lowpass")
+
+        mf_ind = self._maxfreqind
+        n_freq = 2 * mf_ind
+        n_dm = len(self.dm_list)
+
+        # all available unique pairs
+        n_pairs = nmodes // 2
+
+        # metadata: pair labels for each dm
+        # pair_modes[k, j] = [m_a, m_b] in paper-style notation
+        # internally the multiplied columns are (m_a, -m_b)
+        pair_modes = np.zeros((n_dm, n_pairs, 2), dtype=int)
+
+        for k, dm in enumerate(self.dm_list):
+            ind_m_b = roll(modelist[::-1], int(0.5 - dm / 2))[:n_pairs]
+            ind_m_a = roll(modelist,       int(0.0 + dm / 2))[:n_pairs]
+
+            pair_modes[k, :, 0] = ind_m_a
+            pair_modes[k, :, 1] = -ind_m_b  # more intuitive labeling, e.g. (0,5)
+
+        # allocate output buffers
+        result_full = np.zeros((num, n_freq), dtype=float)
+
+        if store == "complex":
+            pair_spectra_full = np.zeros((num, n_dm, n_freq, n_pairs), dtype=complex)
+        else:
+            pair_spectra_full = np.zeros((num, n_dm, n_freq, n_pairs), dtype=float)
+
+        result_step = np.zeros(n_freq, dtype=float)
+        pmt = np.zeros((self.block_size + num, nmodes), dtype=complex)
+
+        ind = 0
+        ind_out = 0
+
+        for block in self.source.result(num):
+            ns = block.shape[0]
+            ind1 = ind + ns
+
+            if ind > 0:
+                pmt[ind:ind1] = block
+            elif ind1 > 0:
+                pmt[:ind1] = block[-ind1:]
+
+            ind = ind1
+
+            if ind >= bs:
+                if f_low > 0:
+                    pmt_temp = filtfilt(b, a, pmt[:bs], axis=0)
+                    if f_high > 0:
+                        pmt_temp = filtfilt(bh, ah, pmt_temp, axis=0)
+                else:
+                    pmt_temp = pmt[:bs]
+
+                for k, dm in enumerate(self.dm_list):
+                    ind_m_b = roll(modelist[::-1], int(0.5 - dm / 2))[:n_pairs]
+                    ind_m_a = roll(modelist,       int(0.0 + dm / 2))[:n_pairs]
+
+                    # one product signal per mode pair
+                    pmtprod = pmt_temp[:, ind_m_a] * pmt_temp[:, ind_m_b]
+
+                    # common rotational-frequency grid
+                    ns_full = int(self._ns_new / dm)
+                    pmf = fft.fft(
+                        pad(pmtprod, [(0, ns_full - bs), (0, 0)]),
+                        None,
+                        axis=0,
+                        norm="ortho",
+                    )
+
+                    pmfpart = np.zeros((n_freq, n_pairs), dtype=complex)
+                    pmfpart[:mf_ind, :] = pmf[-mf_ind:, :n_pairs]
+                    pmfpart[mf_ind:, :] = pmf[:mf_ind, :n_pairs]
+
+                    apmf = np.abs(pmfpart)
+                    med = np.maximum(np.median(apmf, axis=0, keepdims=True), self.eps)
+                    pair_norm = apmf / med
+
+                    # save per-pair spectra
+                    if store == "complex":
+                        pair_spectra_full[ind_out, k] = pmfpart
+                    elif store == "abs":
+                        pair_spectra_full[ind_out, k] = apmf
+                    else:
+                        pair_spectra_full[ind_out, k] = pair_norm
+
+                    # original detector score, unchanged
+                    pmfanglediff = np.sum(
+                        np.abs(np.angle(pmfpart[:, 1:] * pmfpart[:, :-1].conjugate())),
+                        axis=1,
+                    )
+                    pmfanglediff = np.maximum(pmfanglediff, self.eps)
+
+                    result_dm = (1.0 / pmfanglediff) * np.sum(pair_norm, axis=1)
+                    result_step += result_dm
+
+                result_full[ind_out, :] = result_step
+                result_step[:] = 0.0
+                ind_out += 1
+
+                if ind_out >= num:
+                    yield {
+                        "total_spectrum": result_full.copy(),
+                        "pair_spectra": pair_spectra_full.copy(),
+                        "pair_modes": pair_modes.copy(),
+                        "rps_freqs": self.rps_freqs.copy(),
+                        "dm_list": np.asarray(self.dm_list),
+                    }
+                    ind_out = 0
+                    result_full[:] = 0.0
+                    pair_spectra_full[:] = 0.0
+
+                ind -= step
+                if ind > 0:
+                    pmt[:ind] = pmt[step:step + ind]
+
+        if ind_out > 0:
+            yield {
+                "total_spectrum": result_full[:ind_out].copy(),
+                "pair_spectra": pair_spectra_full[:ind_out].copy(),
+                "pair_modes": pair_modes.copy(),
+                "rps_freqs": self.rps_freqs.copy(),
+                "dm_list": np.asarray(self.dm_list),
+            }
+
+    def save_pair_spectra_h5(self, filename, num=1, store="norm", compression="gzip"):
+        """
+        Stream all total and per-pair spectra to an HDF5 file.
+
+        Output datasets:
+            /total_spectrum : (n_time, n_freq)
+            /pair_spectra   : (n_time, n_dm, n_freq, n_pairs)
+            /pair_modes     : (n_dm, n_pairs, 2)
+            /rps_freqs      : (n_freq,)
+            /dm_list        : (n_dm,)
+        """
+        with h5py.File(filename, "w") as h5:
+            first = True
+            n_written = 0
+
+            for out in self.pair_result(num=num, store=store):
+                total = out["total_spectrum"]
+                pairs = out["pair_spectra"]
+
+                if first:
+                    h5.create_dataset("rps_freqs", data=out["rps_freqs"])
+                    h5.create_dataset("dm_list", data=out["dm_list"])
+                    h5.create_dataset("pair_modes", data=out["pair_modes"])
+
+                    h5.create_dataset(
+                        "total_spectrum",
+                        shape=(0, total.shape[1]),
+                        maxshape=(None, total.shape[1]),
+                        chunks=(1, total.shape[1]),
+                        compression=compression,
+                        dtype=total.dtype,
+                    )
+
+                    h5.create_dataset(
+                        "pair_spectra",
+                        shape=(0, pairs.shape[1], pairs.shape[2], pairs.shape[3]),
+                        maxshape=(None, pairs.shape[1], pairs.shape[2], pairs.shape[3]),
+                        chunks=(1, pairs.shape[1], pairs.shape[2], pairs.shape[3]),
+                        compression=compression,
+                        dtype=pairs.dtype,
+                    )
+                    first = False
+
+                n_new = total.shape[0]
+
+                h5["total_spectrum"].resize(n_written + n_new, axis=0)
+                h5["total_spectrum"][n_written:n_written + n_new] = total
+
+                h5["pair_spectra"].resize(n_written + n_new, axis=0)
+                h5["pair_spectra"][n_written:n_written + n_new] = pairs
+
+                n_written += n_new
+
+
+import numpy as np
+import h5py
+from scipy.signal import butter, filtfilt
+from scipy import fft
+
+# If you paste this into tprocess.py, RotationalSpeedDetector already exists.
+# This class reuses its parameters (df, block_size, fmax, band_pass, sample_step, etc.).
+
+class RotationalSpeedDetectorAllPairs(RotationalSpeedDetector):
+    """
+    Compute rotational spectra for all available azimuthal mode pairs (a, b).
+
+    Pair definition
+    ---------------
+    For a labeled pair (a, b), the time-domain product is formed as
+
+        p_a(t) * p_{-b}(t)
+
+    exactly in the spirit of the original method.
+
+    Default behavior
+    ----------------
+    positive_dm_only=True:
+        keep only pairs with dm = b-a > 0
+        (recommended; avoids mirrored duplicates)
+
+    include_zero_dm=False:
+        skip dm = 0 because it does not encode rotational shift
+
+    max_abs_dm=0:
+        use all available |dm| from the available modes
+        if > 0, restrict to |dm| <= max_abs_dm
+    """
+
+    #: Keep only pairs with dm = b-a > 0
+    positive_dm_only = Bool(
+        True,
+        desc="if True, keep only non-redundant pairs with positive delta m"
+    )
+
+    #: Include dm = 0 pairs
+    include_zero_dm = Bool(
+        False,
+        desc="if True, also include mode pairs with delta m = 0"
+    )
+
+    #: Maximum absolute delta m to include; 0 means use all available
+    max_abs_dm = Int(
+        0,
+        desc="maximum absolute delta m to include; 0 means all available"
+    )
+
+    #: Small numerical protection constant
+    eps = Float(
+        1e-12,
+        desc="small epsilon to avoid division by zero"
+    )
+
+    def _build_all_pair_groups(self):
+        """
+        Build all requested mode pairs and group them by |dm|.
+
+        Returns
+        -------
+        groups : list of dict
+            One entry per |dm| group. Each dict contains:
+                dm_abs
+                pair_slice
+                a_cols
+                negb_cols
+                dm_signed
+        mode_pairs : ndarray, shape (n_pairs_total, 2)
+            Labels (a, b)
+        pair_dm : ndarray, shape (n_pairs_total,)
+            Signed dm = b-a for each pair
+        """
+        modelist = np.asarray(self.source.modes, dtype=int)
+        mode_to_col = {int(m): i for i, m in enumerate(modelist)}
+
+        # collect entries grouped by |dm|
+        pairs_by_absdm = {}
+
+        for a in modelist:
+            a = int(a)
+            for b in modelist:
+                b = int(b)
+
+                # we need the mode -b to exist because we multiply p_a with p_-b
+                if -b not in mode_to_col:
+                    continue
+
+                dm = b - a
+                if dm == 0 and not self.include_zero_dm:
+                    continue
+                if self.positive_dm_only and dm < 0:
+                    continue
+                if self.max_abs_dm > 0 and abs(dm) > self.max_abs_dm:
+                    continue
+
+                dm_abs = abs(dm)
+                entry = (a, b, mode_to_col[a], mode_to_col[-b], dm)
+                pairs_by_absdm.setdefault(dm_abs, []).append(entry)
+
+        if not pairs_by_absdm:
+            raise ValueError("No valid mode pairs found for the chosen settings.")
+
+        groups = []
+        mode_pairs_flat = []
+        pair_dm_flat = []
+        start = 0
+
+        for dm_abs in sorted(pairs_by_absdm):
+            entries = pairs_by_absdm[dm_abs]
+
+            # sort pairs to get a stable and interpretable order
+            entries = sorted(entries, key=lambda x: (x[0], x[1]))
+
+            n_this = len(entries)
+            stop = start + n_this
+
+            groups.append({
+                "dm_abs": dm_abs,
+                "pair_slice": slice(start, stop),
+                "a_cols": np.array([e[2] for e in entries], dtype=int),
+                "negb_cols": np.array([e[3] for e in entries], dtype=int),
+                "dm_signed": np.array([e[4] for e in entries], dtype=int),
+            })
+
+            mode_pairs_flat.extend([(e[0], e[1]) for e in entries])
+            pair_dm_flat.extend([e[4] for e in entries])
+
+            start = stop
+
+        mode_pairs = np.asarray(mode_pairs_flat, dtype=int)
+        pair_dm = np.asarray(pair_dm_flat, dtype=int)
+        return groups, mode_pairs, pair_dm
+
+    def _max_abs_dm_available(self):
+        """Largest |dm| that will actually be used."""
+        _, _, pair_dm = self._build_all_pair_groups()
+        return int(np.max(np.abs(pair_dm)))
+
+    @property
+    def rps_freqs_allpairs(self):
+        """
+        Common rotational-frequency axis for the all-pairs computation.
+        """
+        fs = self.source.sample_freq
+        max_abs_dm = self._max_abs_dm_available()
+        ns_new = max(int(fs / self.df) + 1, self.block_size * max_abs_dm)
+        maxfreqind = int(self.fmax * ns_new / fs)
+        fftfreqs = fft.fftfreq(ns_new, 1.0 / fs)
+        return np.hstack((fftfreqs[-maxfreqind:], fftfreqs[:maxfreqind]))
+
+    def pair_result(self, num, store="norm"):
+        """
+        Yield blocks of all pair spectra.
+
+        Parameters
+        ----------
+        num : int
+            Number of output time steps per yielded block.
+        store : {"norm", "abs", "complex"}
+            What to store for each pair:
+              - "norm":  |P_ab| / median(|P_ab|)
+              - "abs":   |P_ab|
+              - "complex": complex spectrum itself
+
+        Yields
+        ------
+        dict with:
+            pair_spectra : (n_out, n_pairs_total, n_freq)
+            mode_pairs   : (n_pairs_total, 2)
+            pair_dm      : (n_pairs_total,)
+            rps_freqs    : (n_freq,)
+        """
+        if store not in {"norm", "abs", "complex"}:
+            raise ValueError("store must be one of: 'norm', 'abs', 'complex'")
+
+        bs = self.block_size
+        step = self.sample_step
+        fs = self.source.sample_freq
+        modelist = np.asarray(self.source.modes, dtype=int)
+        nmodes = len(modelist)
+
+        groups, mode_pairs, pair_dm = self._build_all_pair_groups()
+        n_pairs_total = mode_pairs.shape[0]
+
+        max_abs_dm = int(np.max(np.abs(pair_dm)))
+        ns_new = max(int(fs / self.df) + 1, bs * max_abs_dm)
+        maxfreqind = int(self.fmax * ns_new / fs)
+        n_freq = 2 * maxfreqind
+
+        fftfreqs = fft.fftfreq(ns_new, 1.0 / fs)
+        rps_freqs = np.hstack((fftfreqs[-maxfreqind:], fftfreqs[:maxfreqind]))
+
+        # band-pass
+        f_low, f_high = self.band_pass
+        if f_low > 0:
+            b, a = butter(8, f_low / fs * 2, btype="highpass")
+        if f_high > 0:
+            bh, ah = butter(8, f_high / fs * 2, btype="lowpass")
+
+        # output buffers
+        if store == "complex":
+            pair_spectra_full = np.zeros((num, n_pairs_total, n_freq), dtype=np.complex64)
+        else:
+            pair_spectra_full = np.zeros((num, n_pairs_total, n_freq), dtype=np.float32)
+
+        # rolling input buffer
+        pmt = np.zeros((bs + num, nmodes), dtype=np.complex64)
+
+        ind = 0
+        ind_out = 0
+
+        for block in self.source.result(num):
+            ns = block.shape[0]
+            ind1 = ind + ns
+
+            if ind > 0:
+                pmt[ind:ind1] = block
+            elif ind1 > 0:
+                pmt[:ind1] = block[-ind1:]
+
+            ind = ind1
+
+            if ind >= bs:
+                if f_low > 0:
+                    pmt_temp = filtfilt(b, a, pmt[:bs], axis=0)
+                    if f_high > 0:
+                        pmt_temp = filtfilt(bh, ah, pmt_temp, axis=0)
+                else:
+                    pmt_temp = pmt[:bs]
+
+                # compute one spectrum per pair, grouped by |dm|
+                for grp in groups:
+                    dm_abs = grp["dm_abs"]
+                    sl = grp["pair_slice"]
+                    a_cols = grp["a_cols"]
+                    negb_cols = grp["negb_cols"]
+                    dm_signed = grp["dm_signed"]
+
+                    # p_a(t) * p_-b(t)
+                    pmtprod = pmt_temp[:, a_cols] * pmt_temp[:, negb_cols]
+
+                    # common rotational-frequency mapping, same idea as original RSD
+                    ns_full = int(ns_new / dm_abs)
+                    pmf = fft.fft(
+                        np.pad(pmtprod, [(0, ns_full - bs), (0, 0)]),
+                        None,
+                        axis=0,
+                        norm="ortho",
+                    )
+
+                    pmfpart = np.zeros((n_freq, pmtprod.shape[1]), dtype=np.complex64)
+                    pmfpart[:maxfreqind, :] = pmf[-maxfreqind:, :]
+                    pmfpart[maxfreqind:, :] = pmf[:maxfreqind, :]
+
+                    # if negative dm are included, they are mirrored on the common rps axis
+                    if not self.positive_dm_only:
+                        neg_mask = dm_signed < 0
+                        if np.any(neg_mask):
+                            pmfpart[:, neg_mask] = pmfpart[::-1, neg_mask]
+
+                    apmf = np.abs(pmfpart)
+                    med = np.maximum(np.median(apmf, axis=0, keepdims=True), self.eps)
+
+                    if store == "complex":
+                        pair_spectra_full[ind_out, sl, :] = pmfpart.T
+                    elif store == "abs":
+                        pair_spectra_full[ind_out, sl, :] = apmf.T.astype(np.float32)
+                    else:
+                        pair_spectra_full[ind_out, sl, :] = (apmf / med).T.astype(np.float32)
+
+                ind_out += 1
+
+                if ind_out >= num:
+                    yield {
+                        "pair_spectra": pair_spectra_full.copy(),
+                        "mode_pairs": mode_pairs.copy(),
+                        "pair_dm": pair_dm.copy(),
+                        "rps_freqs": rps_freqs.copy(),
+                    }
+                    ind_out = 0
+                    pair_spectra_full[:] = 0
+
+                # shift rolling buffer
+                ind -= step
+                if ind > 0:
+                    pmt[:ind] = pmt[step:step + ind]
+
+        if ind_out > 0:
+            yield {
+                "pair_spectra": pair_spectra_full[:ind_out].copy(),
+                "mode_pairs": mode_pairs.copy(),
+                "pair_dm": pair_dm.copy(),
+                "rps_freqs": rps_freqs.copy(),
+            }
+
+    def save_pair_spectra_h5(
+        self,
+        filename,
+        num=1,
+        store="norm",
+        compression="gzip",
+        compression_opts=4,
+    ):
+        """
+        Save all pair spectra to HDF5.
+
+        Datasets
+        --------
+        pair_spectra : (n_time, n_pairs_total, n_freq)
+        mode_pairs   : (n_pairs_total, 2)
+        pair_dm      : (n_pairs_total,)
+        rps_freqs    : (n_freq,)
+        """
+        first = True
+        n_written = 0
+
+        with h5py.File(filename, "w") as h5:
+            for out in self.pair_result(num=num, store=store):
+                ps = out["pair_spectra"]
+
+                if first:
+                    h5.create_dataset("mode_pairs", data=out["mode_pairs"])
+                    h5.create_dataset("pair_dm", data=out["pair_dm"])
+                    h5.create_dataset("rps_freqs", data=out["rps_freqs"])
+
+                    h5.create_dataset(
+                        "pair_spectra",
+                        shape=(0, ps.shape[1], ps.shape[2]),
+                        maxshape=(None, ps.shape[1], ps.shape[2]),
+                        chunks=(1, ps.shape[1], ps.shape[2]),
+                        compression=compression,
+                        compression_opts=compression_opts,
+                        dtype=ps.dtype,
+                    )
+                    first = False
+
+                n_new = ps.shape[0]
+                h5["pair_spectra"].resize(n_written + n_new, axis=0)
+                h5["pair_spectra"][n_written:n_written + n_new] = ps
+                n_written += n_new
+
+
         
 class RotationalSpeedDetector2( RotationalSpeedDetector ):
     """
