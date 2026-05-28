@@ -98,6 +98,7 @@ from .rotating import (
     RotationalSpeedDetector,
     RotationalSpeedDetectorPairs,
     RotationalSpeedDetectorAllPairs,
+    RotationalSpeedDetectorAutoAllPairsGrouped,
     RotationalSpeedDetector2,
     RotationalSpeedDetector3,
     RotationalSpeed,
