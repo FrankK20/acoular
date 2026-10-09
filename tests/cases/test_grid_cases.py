@@ -25,10 +25,12 @@ GRIDS_SKIP_DEFAULT = [
     ac.RectGrid,
     ac.RectGrid3D,
     ac.LineGrid,
+    ac.PointGrid,
     ac.ImportGrid,
     ac.MergeGrid,
     ac.BeamformerAdaptiveGrid,
     ac.BeamformerGridlessOrth,
+    ac.BeamformerEA,
 ]
 
 SECTOR_DEFAULT = [s for s in get_subclasses(ac.Sector) if s not in SECTOR_SKIP_DEFAULT]
@@ -67,6 +69,9 @@ class Grids:
                 ac.LineGrid(loc=(-1, 0, 1), length=2, num_points=3),
             ]
         )
+
+    def case_PointGrid(self):
+        return ac.PointGrid(gpos=np.array([[0], [0], [1]]))
 
 
 if len(GRIDS_DEFAULT) > 0:

@@ -33,6 +33,7 @@ Implements beamformers in the frequency domain.
     BeamformerGIB
     BeamformerAdaptiveGrid
     BeamformerGridlessOrth
+    BeamformerEA
 
     PointSpreadFunction
     L_p
@@ -48,7 +49,7 @@ from warnings import warn as _warn
 from .configuration import config
 from .environments import Environment
 from .fastFuncs import beamformerFreq, calcPointSpreadFunction, calcTransfer, damasSolverGaussSeidel
-from .grids import Grid, Sector
+from .grids import Grid, PointGrid, Sector
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
@@ -58,7 +59,7 @@ from .tfastfuncs import _steer_I, _steer_II, _steer_III, _steer_IV
 
 import numpy as np
 import scipy.linalg as spla
-from scipy.optimize import fmin_l_bfgs_b, linprog, nnls, shgo
+from scipy.optimize import differential_evolution, fmin_l_bfgs_b, linprog, nnls, shgo
 from traits.api import (
     Any,
     Bool,
@@ -2406,6 +2407,132 @@ class BeamformerGridlessOrth(BeamformerAdaptiveGrid):
                 self._gpos[:, i1] = oR['x']
                 # store result for level
                 self._ac[i, i1] = eigvals[n] / num_channels
+            self._fr[i] = 1
+
+
+class BeamformerEA(BeamformerAdaptiveGrid):
+    """Beamforming with evolutionary algorithm.
+
+    The locations of the sources are sought for by using a global
+    optimization method. In this way, estimates for source positions
+    and source strengths are obtained as a solution of the
+    optimization and do not need to be obtained from a delay-and-sum
+    beam former result.
+    Malgoezar et al. 2017
+    """
+
+    # Dictionary for setting additional keyword arguments of the
+    # solver for example set the population for differential evolution
+    # with kwargs['popsize'] = x
+    kwargs = Dict({})
+
+    # internal identifier
+    digest = Property(
+        depends_on=['steer.digest', 'freq_data.digest', 'r_diag', 'n', 'bounds', 'kwargs'],
+    )
+
+    # Defines the bounds for the optimization [[x_l, x_u],[y_l, y_u],[z_l, z_u],[s_l, s_u]]
+    # where l means lower  and u upper boundary, s is the source strength, x,y,z are the source
+    # positions.
+    # The same bounds are used for all sources.
+    bounds = List(Tuple(Float, Float), minlen=4, maxlen=4, value=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (0.01, 1.0)])
+
+    # Number of sources used for the reconstruction
+    n = Int(1)
+
+    @property_depends_on(['n'])
+    def _get_size(self):
+        return self.n * self.freq_data.fftfreq().shape[0]
+
+    @cached_property
+    def _get_digest(self):
+        return digest(self)
+
+    # function to repack complex matrices to deal with them
+    # in real number space
+    @staticmethod
+    def real(m):
+        return np.vstack([m.real, m.imag])
+
+    def ecsm(self, x, i):
+        """
+        Cost function defined as differences of the measured CSM and
+        the modeled CSM by Malgoezar et al. 2017. This function defines
+        the matrix fitting problem. This implementation also removes
+        the main diagonal of the CSM when r_diag is set to True.
+
+        .. math::
+                E_{csm} =  sum{[Re(C_{meas})-Re(C_{model}]^2 +
+                [Im(C_{meas}) - Im(C_{model})]^2}
+
+        :param x: array of floats
+                This array of dimension ([number of grid points]x 4)
+                is used to give the function the coordinates of each
+                source and source strength. The corridinates x_si, y_si, z_si
+                of each source i and source strengths di. Are arranged
+                in one array in such order :
+
+                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
+
+        :param i: int
+                index of frequency
+        :return: int The value of the E_CSM energy function
+        """
+        if len(x) != len(self.n * self.bounds):
+            msg = 'Error: x in wrong shape'
+            raise ValueError(msg)
+        x = x.reshape((self.n, 4))
+        p = x[:, :3].T  # source positions
+        p0 = x[:, 3]  # source strengths
+        self.steer.grid = PointGrid(gpos=p)
+        csm = np.array(self.freq_data.csm[i], dtype='complex128')
+        hh = self.steer.transfer(self.freq_data.fftfreq()[i])
+        hh = hh.reshape((1, self.steer.rm.shape[0], self.steer.mics.pos.shape[1]))
+        h = hh[0].T
+
+        nc = self.freq_data.num_channels
+        bc = (h[:, :, np.newaxis] * h.conjugate().T[np.newaxis, :, :]).transpose(2, 0, 1)
+        ac = bc.reshape(nc * nc, self.steer.rm.shape[0])
+        # get indices for lower triangular matrices
+        ind = np.reshape(np.tril(np.ones((nc, nc))), (nc * nc,)) > 0
+        ind_im0 = (np.reshape(np.eye(nc), (nc * nc,)) == 0)[ind]
+        # if diagonal is removed
+        # omit main diagonal for noise reduction
+        # take all real parts in the lower triangle matrix
+        # and the imaginary parts in the lower triangle matrix
+        # excluding the diagonal since the imaginary part is 0
+        # on the diagonal
+        ind_reim = np.hstack([ind_im0, ind_im0]) if self.r_diag else np.hstack([np.ones(np.size(ind_im0)) > 0, ind_im0])
+        a = self.real(ac[ind, :])[ind_reim, :]
+        r = self.real(np.reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim, :]
+        return np.square(spla.norm(np.dot(a, p0) - r[:, 0]))
+
+    def _calc(self, ind):
+        """
+        Calculates the result for the frequencies defined by :attr:`freq_data`.
+
+        This is an internal helper function that is automatically called when
+        accessing the beamformer's :attr:`result` or calling
+        its :meth:`synthetic` method.
+
+        Parameters
+        ----------
+        ind : array of int
+            This array contains all frequency indices for which (re)calculation is
+            to be performed
+
+        Returns
+        -------
+        This method only returns values through :attr:`_ac` and :attr:`_fr`
+
+        """
+        for i in ind:
+            res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
+            x = res.x.reshape((self.n, 4))
+            p = x[:, :3].T  # source positions
+            p0 = x[:, 3]  # source strengths
+            self._gpos[:, i * self.n : (i + 1) * self.n] = p
+            self._ac[i, i * self.n : (i + 1) * self.n] = p0
             self._fr[i] = 1
 
 

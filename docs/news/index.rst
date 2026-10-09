@@ -6,6 +6,8 @@ Upcoming
 **New features**
 
     - Extends functionality of :class:`~acoular.aiaa.TimeSamplesAIAABenchmark` to handle transposed data
+    - introduces new :class:`~acoular.fbeamform.BeamformerEA`
+    - introduces new :class:`~acoular.grids.PointGrid`
 
 **Documentation**
 

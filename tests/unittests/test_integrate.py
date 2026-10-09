@@ -70,6 +70,8 @@ def skip_or_fail(grid, sector):
 
     if isinstance(grid, ac.RectGrid) and isinstance(sector, np.ndarray) and sector.shape[0] > 4:
         pytest.skip('RectGrid does not support 3D sectors')
+    if isinstance(grid, ac.PointGrid):
+        pytest.skip('PointGrid does not support anything')
 
 
 @parametrize_with_cases(
@@ -99,6 +101,8 @@ def test_sector_integration_functional(setup_beamformer_integrate, sector):
          sector values for each frequency band
     """
     bf, grid = setup_beamformer_integrate
+    if isinstance(bf, ac.BeamformerEA):
+        pytest.skip('BeamformerEA needs special test')
     skip_or_fail(grid, sector)
 
     # One-dimensional data test
@@ -134,6 +138,8 @@ def test_sector_integration(setup_beamformer_integrate, sector):
         Sector indices (non-empty cases from Sectors)
     """
     bf, grid = setup_beamformer_integrate
+    if isinstance(bf, ac.BeamformerEA):
+        pytest.skip('BeamformerEA needs special test')
     skip_or_fail(grid, sector)
     f = bf.freq_data.frequencies
     integration_res = bf.integrate(sector)
