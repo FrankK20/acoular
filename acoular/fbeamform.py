@@ -2412,7 +2412,7 @@ class BeamformerGridlessOrth(BeamformerAdaptiveGrid):
 
 
 def _ecsm_cost(x, n, k, mpos, ref, env, ia, ib, w, r_meas, csm_scale):
-    """
+    r"""
     Normalized CSM fitting energy of :class:`BeamformerEA` (module level, so it can be pickled).
 
     Parameters
@@ -2441,7 +2441,7 @@ def _ecsm_cost(x, n, k, mpos, ref, env, ia, ib, w, r_meas, csm_scale):
     Returns
     -------
     float
-        :math:`\\|C_{meas} - C_{model}\\|_F^2 / \\|C_{meas}\\|_F^2`, restricted to the used entries.
+        :math:`\|C_{meas} - C_{model}\|_F^2 / \|C_{meas}\|_F^2`, restricted to the used entries.
     """
     if x.shape != (4 * n,):
         msg = f'x must have shape ({4 * n},), got {x.shape}.'
@@ -2454,7 +2454,7 @@ def _ecsm_cost(x, n, k, mpos, ref, env, ia, ib, w, r_meas, csm_scale):
 
 
 def _ea_model(x, k, mpos, ref, env, csm_scale):
-    """Transfer functions (n, M) and source strengths (n,) for the parameter array x of shape (n, 4)."""
+    """Transfer functions (n, M) and source strengths (n,) for parameters x of shape (n, 4)."""
     p = np.ascontiguousarray(x[:, :3].T)
     rm = np.atleast_2d(env.apparent_r(p, mpos))
     if np.isscalar(ref):
@@ -2469,12 +2469,12 @@ def _ea_model(x, k, mpos, ref, env, csm_scale):
 
 
 class BeamformerEA(BeamformerAdaptiveGrid):
-    """
+    r"""
     Beamforming with an evolutionary algorithm (CSM fitting) without predefined grid.
 
     The positions and strengths of :attr:`n` uncorrelated monopole sources are found by
     minimizing the difference between the measured cross spectral matrix (CSM) and the
-    modeled CSM :math:`C_{model} = \\sum_k q_k h_k h_k^H` with differential evolution.
+    modeled CSM :math:`C_{model} = \sum_k q_k h_k h_k^H` with differential evolution.
     The source positions and strengths are obtained directly as the solution of the
     optimization and do not need to be derived from a delay-and-sum beamforming map.
     See :cite:`Malgoezar2017` for details.
@@ -2482,7 +2482,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     The energy function is
 
     .. math::
-        E = \\frac{\\|C_{meas} - C_{model}\\|_F^2}{\\|C_{meas}\\|_F^2},
+        E = \frac{\|C_{meas} - C_{model}\|_F^2}{\|C_{meas}\|_F^2},
 
     where the main diagonal is excluded from both norms if :attr:`r_diag` is True.
     :math:`h_k` is the transfer function as given by :meth:`SteeringVector.transfer`.
@@ -2492,8 +2492,8 @@ class BeamformerEA(BeamformerAdaptiveGrid):
     and :attr:`SteeringVector.grid` are not used.
 
     Internally, the strength :math:`s_k` of each source is optimized in normalized form,
-    :math:`q_k = s_k \\, \\overline{\\mathrm{diag}(C_{meas})} / \\overline{|h_k|^2}`,
-    with :math:`0 \\le s_k \\le 1`. For uncorrelated sources this bound is exact.
+    :math:`q_k = s_k \, \overline{\mathrm{diag}(C_{meas})} / \overline{|h_k|^2}`,
+    with :math:`0 \le s_k \le 1`. For uncorrelated sources this bound is exact.
 
     For each frequency, the :attr:`n` found sources are stored in :attr:`pos` and
     :attr:`result`. Grid points belonging to frequencies that have not been calculated
@@ -2583,7 +2583,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         ia, ib = np.tril_indices(nc, -1 if self.r_diag else 0)
         # weights: off-diagonal entries appear twice in the full (hermitian) matrix
         w = np.where(ia == ib, 1.0, 2.0)
-        k = 2 * np.pi * self._f[i] / self.steer.env.c
+        k = 2 * np.pi * self.freq_data.fftfreq()[i] / self.steer.env.c
         csm_scale = np.mean(np.real(np.diag(csm)))
         return (self.n, k, self.steer.mics.pos, self.steer.ref, self.steer.env, ia, ib, w, csm[ia, ib], csm_scale)
 
@@ -2649,6 +2649,7 @@ class BeamformerEA(BeamformerAdaptiveGrid):
                 self._gpos[:, i * self.n : (i + 1) * self.n] = x[:, :3].T
                 self._ac[i, i * self.n : (i + 1) * self.n] = q
             self._fr[i] = 1
+
 
 def L_p(x):  # noqa: N802
     r"""
