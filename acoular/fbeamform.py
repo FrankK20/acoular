@@ -49,7 +49,7 @@ from warnings import warn as _warn
 from .configuration import config
 from .environments import Environment
 from .fastFuncs import beamformerFreq, calcPointSpreadFunction, calcTransfer, damasSolverGaussSeidel
-from .grids import Grid, PointGrid, Sector
+from .grids import Grid, Sector
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
@@ -73,6 +73,7 @@ from traits.api import (
     List,
     Property,
     Range,
+    Str,
     Tuple,
     cached_property,
     observe,
@@ -2410,102 +2411,214 @@ class BeamformerGridlessOrth(BeamformerAdaptiveGrid):
             self._fr[i] = 1
 
 
-class BeamformerEA(BeamformerAdaptiveGrid):
-    """Beamforming with evolutionary algorithm.
+def _ecsm_cost(x, n, k, mpos, ref, env, ia, ib, w, r_meas, csm_scale):
+    """
+    Normalized CSM fitting energy of :class:`BeamformerEA` (module level, so it can be pickled).
 
-    The locations of the sources are sought for by using a global
-    optimization method. In this way, estimates for source positions
-    and source strengths are obtained as a solution of the
-    optimization and do not need to be obtained from a delay-and-sum
-    beam former result.
-    Malgoezar et al. 2017
+    Parameters
+    ----------
+    x : array of floats
+        Parameter vector of shape (4n,), ordered as [x_1, y_1, z_1, s_1, x_2, ...].
+    n : int
+        Number of sources.
+    k : float
+        Wave number.
+    mpos : array of floats
+        Microphone positions, shape (3, M).
+    ref : float or array of floats
+        Reference distance or position, as in :attr:`SteeringVector.ref`.
+    env : :class:`~acoular.environments.Environment`
+        Environment used to compute the distances.
+    ia, ib : arrays of ints
+        Row and column indices of the CSM entries that enter the energy.
+    w : array of floats
+        Weights of the CSM entries (1 on the diagonal, 2 off the diagonal).
+    r_meas : array of complex
+        Measured CSM entries ``csm[ia, ib]``.
+    csm_scale : float
+        Mean of the main diagonal of the measured CSM.
+
+    Returns
+    -------
+    float
+        :math:`\\|C_{meas} - C_{model}\\|_F^2 / \\|C_{meas}\\|_F^2`, restricted to the used entries.
+    """
+    if x.shape != (4 * n,):
+        msg = f'x must have shape ({4 * n},), got {x.shape}.'
+        raise ValueError(msg)
+    x = x.reshape((n, 4))
+    h, q = _ea_model(x, k, mpos, ref, env, csm_scale)
+    r_model = q @ (h[:, ia] * h[:, ib].conj())
+    d = r_model - r_meas
+    return np.sum(w * (d.real**2 + d.imag**2)) / np.sum(w * (r_meas.real**2 + r_meas.imag**2))
+
+
+def _ea_model(x, k, mpos, ref, env, csm_scale):
+    """Transfer functions (n, M) and source strengths (n,) for the parameter array x of shape (n, 4)."""
+    p = np.ascontiguousarray(x[:, :3].T)
+    rm = np.atleast_2d(env.apparent_r(p, mpos))
+    if np.isscalar(ref):
+        r0 = np.full((p.shape[1],), ref) if ref > 0 else env.apparent_r(p)
+    else:
+        r0 = np.ravel(env.apparent_r(p, ref[:, np.newaxis]))
+    h = calcTransfer(r0, rm, np.array(k))
+    # the optimized strength s is normalized such that s = 1 corresponds to a single
+    # source that explains the whole (mean) auto power of the measured CSM
+    q = x[:, 3] * csm_scale / np.mean(np.abs(h) ** 2, axis=1)
+    return h, q
+
+
+class BeamformerEA(BeamformerAdaptiveGrid):
+    """
+    Beamforming with an evolutionary algorithm (CSM fitting) without predefined grid.
+
+    The positions and strengths of :attr:`n` uncorrelated monopole sources are found by
+    minimizing the difference between the measured cross spectral matrix (CSM) and the
+    modeled CSM :math:`C_{model} = \\sum_k q_k h_k h_k^H` with differential evolution.
+    The source positions and strengths are obtained directly as the solution of the
+    optimization and do not need to be derived from a delay-and-sum beamforming map.
+    See :cite:`Malgoezar2017` for details.
+
+    The energy function is
+
+    .. math::
+        E = \\frac{\\|C_{meas} - C_{model}\\|_F^2}{\\|C_{meas}\\|_F^2},
+
+    where the main diagonal is excluded from both norms if :attr:`r_diag` is True.
+    :math:`h_k` is the transfer function as given by :meth:`SteeringVector.transfer`.
+    The result :math:`q_k` is the squared sound pressure of source :math:`k` at the
+    reference position :attr:`SteeringVector.ref`, i.e. it has the same unit as the result of
+    :class:`BeamformerBase` with ``steer_type='true level'``. :attr:`SteeringVector.steer_type`
+    and :attr:`SteeringVector.grid` are not used.
+
+    Internally, the strength :math:`s_k` of each source is optimized in normalized form,
+    :math:`q_k = s_k \\, \\overline{\\mathrm{diag}(C_{meas})} / \\overline{|h_k|^2}`,
+    with :math:`0 \\le s_k \\le 1`. For uncorrelated sources this bound is exact.
+
+    For each frequency, the :attr:`n` found sources are stored in :attr:`pos` and
+    :attr:`result`. Grid points belonging to frequencies that have not been calculated
+    have zero strength and are located at the origin.
     """
 
-    # Dictionary for setting additional keyword arguments of the
-    # solver for example set the population for differential evolution
-    # with kwargs['popsize'] = x
-    kwargs = Dict({})
-
-    # internal identifier
-    digest = Property(
-        depends_on=['steer.digest', 'freq_data.digest', 'r_diag', 'n', 'bounds', 'kwargs'],
-    )
-
-    # Defines the bounds for the optimization [[x_l, x_u],[y_l, y_u],[z_l, z_u],[s_l, s_u]]
-    # where l means lower  and u upper boundary, s is the source strength, x,y,z are the source
-    # positions.
-    # The same bounds are used for all sources.
-    bounds = List(Tuple(Float, Float), minlen=4, maxlen=4, value=[(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (0.01, 1.0)])
-
-    # Number of sources used for the reconstruction
+    #: Number of sources used for the reconstruction. Defaults to 1.
     n = Int(1)
 
-    @property_depends_on(['n'])
-    def _get_size(self):
-        return self.n * self.freq_data.fftfreq().shape[0]
+    #: Geometrical bounds of the search domain. :attr:`bounds` is a list that contains
+    #: exactly three tuples of (min, max) for each of the coordinates x, y, z.
+    #: The same bounds are used for all sources. Defaults to [(-1.,1.),(-1.,1.),(0.01,1.)].
+    bounds = List(Tuple(Float, Float), minlen=3, maxlen=3, value=[(-1.0, 1.0), (-1.0, 1.0), (0.01, 1.0)])
+
+    #: Total number of individuals in the population. Defaults to 128 :cite:`Malgoezar2017`.
+    population = Int(128)
+
+    #: Maximum number of generations. Defaults to 600 :cite:`Malgoezar2017`.
+    maxiter = Int(600)
+
+    #: Differential evolution strategy, see
+    #: `scipy docs <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.differential_evolution.html>`_.
+    #: Defaults to 'rand1bin' :cite:`Malgoezar2017`.
+    strategy = Str('rand1bin')
+
+    #: Mutation constant (differential weight) F. Defaults to 0.35 :cite:`Malgoezar2017`.
+    mutation = Float(0.35)
+
+    #: Recombination (crossover) probability. Defaults to 0.75 :cite:`Malgoezar2017`.
+    recombination = Range(0.0, 1.0, 0.75)
+
+    #: Relative tolerance for convergence of the population. Defaults to 0, i.e. the
+    #: optimization runs for :attr:`maxiter` generations as in :cite:`Malgoezar2017`.
+    tol = Float(0.0)
+
+    #: Seed for the random number generator of the optimizer. Defaults to 0.
+    seed = Int(0)
+
+    #: Additional keyword arguments for :func:`scipy.optimize.differential_evolution`.
+    #: These override the values derived from the other attributes. The keys
+    #: 'workers', 'callback', 'disp' and 'updating' do not enter the :attr:`digest`.
+    kwargs = Dict
+
+    #: Normalization of the removed diagonal is not needed for CSM fitting. Defaults to 1.0.
+    r_diag_norm = Enum(1.0)
+
+    #: Keyword arguments that affect the result, as a sorted string (internal use).
+    _kwargs_key = Property(depends_on=['kwargs', 'kwargs_items'])
+
+    #: A unique identifier for the beamformer, based on its properties. (read-only)
+    digest = Property(
+        depends_on=[
+            'freq_data.digest',
+            'steer.inv_digest',
+            'precision',
+            'r_diag',
+            'n',
+            'bounds',
+            'population',
+            'maxiter',
+            'strategy',
+            'mutation',
+            'recombination',
+            'tol',
+            'seed',
+            '_kwargs_key',
+        ],
+    )
+
+    @cached_property
+    def _get__kwargs_key(self):
+        ignore = ('workers', 'callback', 'disp', 'updating')
+        return str(sorted((key, repr(val)) for key, val in self.kwargs.items() if key not in ignore))
 
     @cached_property
     def _get_digest(self):
         return digest(self)
 
-    # function to repack complex matrices to deal with them
-    # in real number space
-    @staticmethod
-    def real(m):
-        return np.vstack([m.real, m.imag])
+    @property_depends_on(['n', 'freq_data.digest'])
+    def _get_size(self):
+        return self.n * self.freq_data.fftfreq().shape[0]
+
+    def _ecsm_args(self, i):
+        """Precompute the frequency dependent arguments of the energy function."""
+        csm = np.array(self.freq_data.csm[i], dtype='complex128')
+        nc = csm.shape[0]
+        ia, ib = np.tril_indices(nc, -1 if self.r_diag else 0)
+        # weights: off-diagonal entries appear twice in the full (hermitian) matrix
+        w = np.where(ia == ib, 1.0, 2.0)
+        k = 2 * np.pi * self._f[i] / self.steer.env.c
+        csm_scale = np.mean(np.real(np.diag(csm)))
+        return (self.n, k, self.steer.mics.pos, self.steer.ref, self.steer.env, ia, ib, w, csm[ia, ib], csm_scale)
+
+    def _de_options(self):
+        """Options for :func:`scipy.optimize.differential_evolution`."""
+        opts = {
+            'popsize': max(1, int(np.ceil(self.population / (4 * self.n)))),
+            'maxiter': self.maxiter,
+            'strategy': self.strategy,
+            'mutation': self.mutation,
+            'recombination': self.recombination,
+            'tol': self.tol,
+            'rng': self.seed,
+        }
+        opts.update(self.kwargs)
+        return opts
 
     def ecsm(self, x, i):
         """
-        Cost function defined as differences of the measured CSM and
-        the modeled CSM by Malgoezar et al. 2017. This function defines
-        the matrix fitting problem. This implementation also removes
-        the main diagonal of the CSM when r_diag is set to True.
+        Evaluate the normalized CSM fitting energy.
 
-        .. math::
-                E_{csm} =  sum{[Re(C_{meas})-Re(C_{model}]^2 +
-                [Im(C_{meas}) - Im(C_{model})]^2}
+        Parameters
+        ----------
+        x : array of floats
+            Parameter vector of shape (4 * :attr:`n`,) with the coordinates and the normalized
+            strengths of the sources, ordered as [x_1, y_1, z_1, s_1, x_2, y_2, z_2, s_2, ...].
+        i : int
+            Frequency index.
 
-        :param x: array of floats
-                This array of dimension ([number of grid points]x 4)
-                is used to give the function the coordinates of each
-                source and source strength. The corridinates x_si, y_si, z_si
-                of each source i and source strengths di. Are arranged
-                in one array in such order :
-
-                [x_s1 , y_s1, z_s1, d1, x_s2 , y_s2, z_s2, d2, ....]
-
-        :param i: int
-                index of frequency
-        :return: int The value of the E_CSM energy function
+        Returns
+        -------
+        float
+            The value of the energy function.
         """
-        if len(x) != len(self.n * self.bounds):
-            msg = 'Error: x in wrong shape'
-            raise ValueError(msg)
-        x = x.reshape((self.n, 4))
-        p = x[:, :3].T  # source positions
-        p0 = x[:, 3]  # source strengths
-        self.steer.grid = PointGrid(gpos=p)
-        csm = np.array(self.freq_data.csm[i], dtype='complex128')
-        hh = self.steer.transfer(self.freq_data.fftfreq()[i])
-        hh = hh.reshape((1, self.steer.rm.shape[0], self.steer.mics.pos.shape[1]))
-        h = hh[0].T
-
-        nc = self.freq_data.num_channels
-        bc = (h[:, :, np.newaxis] * h.conjugate().T[np.newaxis, :, :]).transpose(2, 0, 1)
-        ac = bc.reshape(nc * nc, self.steer.rm.shape[0])
-        # get indices for lower triangular matrices
-        ind = np.reshape(np.tril(np.ones((nc, nc))), (nc * nc,)) > 0
-        ind_im0 = (np.reshape(np.eye(nc), (nc * nc,)) == 0)[ind]
-        # if diagonal is removed
-        # omit main diagonal for noise reduction
-        # take all real parts in the lower triangle matrix
-        # and the imaginary parts in the lower triangle matrix
-        # excluding the diagonal since the imaginary part is 0
-        # on the diagonal
-        ind_reim = np.hstack([ind_im0, ind_im0]) if self.r_diag else np.hstack([np.ones(np.size(ind_im0)) > 0, ind_im0])
-        a = self.real(ac[ind, :])[ind_reim, :]
-        r = self.real(np.reshape(csm.T, (nc * nc, 1))[ind, :])[ind_reim, :]
-        return np.square(spla.norm(np.dot(a, p0) - r[:, 0]))
+        return _ecsm_cost(np.asarray(x, dtype=float), *self._ecsm_args(i))
 
     def _calc(self, ind):
         """
@@ -2524,17 +2637,18 @@ class BeamformerEA(BeamformerAdaptiveGrid):
         Returns
         -------
         This method only returns values through :attr:`_ac` and :attr:`_fr`
-
         """
+        bounds = self.n * [*self.bounds, (0.0, 1.0)]
+        opts = self._de_options()
         for i in ind:
-            res = differential_evolution(self.ecsm, self.n * self.bounds, (i,), **self.kwargs)
-            x = res.x.reshape((self.n, 4))
-            p = x[:, :3].T  # source positions
-            p0 = x[:, 3]  # source strengths
-            self._gpos[:, i * self.n : (i + 1) * self.n] = p
-            self._ac[i, i * self.n : (i + 1) * self.n] = p0
+            args = self._ecsm_args(i)
+            if args[-1] > 0:
+                res = differential_evolution(_ecsm_cost, bounds, args=args, **opts)
+                x = res.x.reshape((self.n, 4))
+                _, q = _ea_model(x, *args[1:5], args[-1])
+                self._gpos[:, i * self.n : (i + 1) * self.n] = x[:, :3].T
+                self._ac[i, i * self.n : (i + 1) * self.n] = q
             self._fr[i] = 1
-
 
 def L_p(x):  # noqa: N802
     r"""

@@ -40,7 +40,6 @@ Implement support for multidimensional grids and integration sectors.
     ConvexSector
     MultiSector
     in_hull
-    PointGrid
 """
 
 # imports from other packages
@@ -1493,47 +1492,3 @@ class MultiSector(Sector):
             inds += sec.contains(pos)
 
         return inds.astype(bool)
-
-
-class PointGrid(Grid):
-    """
-    Provides a 3d Grid for the beamforming results, based on given points.
-    The points can be set by setting the :attr:`~PointGrid.gpos` attribute.
-    """
-
-    # internal identifiers
-    digest = Property(depends_on=['gpos'])
-
-    gpos = CArray()
-
-    def _set_gpos(self, pos):
-        """
-        Sets the :attr:`~PointGrid.gpos` attribute.
-
-        Parameters
-        ----------
-        pos : array of floats
-            Array with the shape 3x[number of gridpoints] containing the
-            grid positions
-        """
-        if isinstance(pos, np.ndarray) and pos.shape[0] == 3:
-            self.gpos = pos
-        else:
-            msg = 'gpos must be a ndarray of shape (3, N)'
-            raise ValueError(msg)
-
-    @property_depends_on(['gpos'])
-    def _get_size(self):
-        return self.gpos.shape[-1]
-
-    @property_depends_on(['gpos'])
-    def _get_shape(self):
-        return self.gpos.shape[-1]
-
-    @property_depends_on(['gpos'])
-    def _get_pos(self):
-        return self.gpos
-
-    @cached_property
-    def _get_digest(self):
-        return digest(self)

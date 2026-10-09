@@ -189,6 +189,8 @@ class Beamformer:
             r_diag=r_diag,
             freq_data=regression_source_case.freq_data_import,
             steer=regression_source_case.steer,
+            population=32,
+            maxiter=20,
         )
 
     @parametrize('bf', BF_DEFAULT)

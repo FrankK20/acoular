@@ -13,7 +13,7 @@ class Caching:
     """Cases for testing caching functionality of Acoular objects.
 
     Current cases:
-    - BeamformerBase, BeamformerSODIX, BeamformerGridlessOrth
+    - BeamformerBase, BeamformerSODIX, BeamformerGridlessOrth, BeamformerEA
     - PowerSpectra
     - PointSpreadFunction
     - Cache (sources: TimeSamples and RFFT)
@@ -21,8 +21,8 @@ class Caching:
 
     @parametrize(
         'beamformer',
-        [ac.BeamformerBase, ac.BeamformerSODIX, ac.BeamformerGridlessOrth],
-        ids=['BeamformerBase', 'SODIX', 'GridlessOrth'],
+        [ac.BeamformerBase, ac.BeamformerSODIX, ac.BeamformerGridlessOrth, ac.BeamformerEA],
+        ids=['BeamformerBase', 'SODIX', 'GridlessOrth', 'EA'],
     )
     @parametrize('cached', [False, True], ids=['cached-False', 'cached-True'])
     def case_caching_beamformer(self, small_source_case, beamformer, cached):
@@ -34,6 +34,9 @@ class Caching:
             bfs.append(bf)
             if hasattr(bf, 'shgo'):
                 bf.shgo = {'n': 10, 'iters': 1}
+            if isinstance(bf, ac.BeamformerEA):
+                bf.population = 8
+                bf.maxiter = 2
 
         def calc(beamformer):
             return beamformer.synthetic(8000, 0)
